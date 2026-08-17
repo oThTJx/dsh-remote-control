@@ -1,9 +1,7 @@
-import { networkInterfaces } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 // Loader's Context declaration merge provides ctx.loader.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
-import { RelayServer } from '@firefly0621/dsh-remote-relay'
 import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 import { RelayClient } from './relay-client.ts'
 import { createHandler, HandlerError } from './handlers.ts'
@@ -11,16 +9,17 @@ import { resolveIdentity, generateIdentity, type Identity } from './identity.ts'
 import { RemoteControlGateway } from './gateway.ts'
 import type { PairingSnapshot } from './pairing-state.ts'
 
-/** Plugin config; everything is optional — the default boots a local relay with an auto-generated identity. */
+/** Conventional address of a locally running relay; override via relayUrl or the pairing panel. */
+export const DEFAULT_RELAY_URL = 'ws://127.0.0.1:8787'
+
+/** Plugin config; everything is optional — an identity is auto-generated and the relay defaults to localhost. */
 export interface Config {
-  /** Public relay WSS URL, e.g. wss://relay.example.com; absent starts an embedded local relay on `port`. */
+  /** Public relay WSS URL, e.g. wss://relay.example.com; absent defaults to a local relay on 127.0.0.1:8787. */
   relayUrl?: string
   /** Stable device id; auto-generated and persisted when absent. */
   deviceId?: string
   /** Long-lived secret registered on the relay for this deviceId; auto-generated and persisted when absent. */
   deviceSecret?: string
-  /** Port for the embedded local relay; defaults to 8787. */
-  port?: number
 }
 
 export const name = 'remote-control'
@@ -31,18 +30,7 @@ export const Config: z<Config> = z.object({
   relayUrl: z.string(),
   deviceId: z.string(),
   deviceSecret: z.string().role('secret'),
-  port: z.number(),
 })
-
-/** First non-internal IPv4 address, for the phone-facing QR URL of a local relay. */
-export function lanIPv4(): string {
-  for (const addresses of Object.values(networkInterfaces())) {
-    for (const address of addresses ?? []) {
-      if (address.family === 'IPv4' && !address.internal) return address.address
-    }
-  }
-  return '127.0.0.1'
-}
 
 /** Serve remote commands over the outbound relay connection. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
@@ -57,21 +45,18 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   })
 
   let client: RelayClient | undefined
-  let relay: RelayServer | undefined
-  let relayUrl: string | undefined
-  let phoneRelayUrl: string
+  let relayUrl = DEFAULT_RELAY_URL
 
-  const startClient = (targetUrl: string): void => {
+  const startClient = (): void => {
     client?.stop()
     client = new RelayClient({
-      relayUrl: targetUrl,
+      relayUrl,
       deviceId: current.deviceId,
       deviceSecret: current.deviceSecret,
       onPairing: (payload) => {
         state.status = 'pairing'
         state.code = payload.code
         state.expiresAt = payload.expiresAt
-        state.phoneRelayUrl = phoneRelayUrl
       },
       onMessage: (message) => {
         if (message.type === 'request') {
@@ -102,48 +87,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     client.start()
   }
 
-  /**
-   * Point the connection at `nextUrl` (undefined = the embedded local relay),
-   * tearing down the previous client and embedded relay first.
-   */
-  const reconfigure = async (nextUrl: string | undefined): Promise<void> => {
+  /** Point the connection at a new relay address, tearing down the previous client first. */
+  const reconfigure = async (nextUrl: string): Promise<void> => {
     client?.stop()
     client = undefined
-    if (relay !== undefined) {
-      await relay.close()
-      relay = undefined
-    }
     state.status = 'connecting'
     delete state.code
     delete state.expiresAt
-    delete state.phoneRelayUrl
     delete state.qrDataUrl
     delete state.error
-    if (nextUrl === undefined) {
-      const port = config.port ?? 8787
-      // The embedded relay accepts the auto-generated identity's first hello
-      // and lets a reset identity register after a fresh generation.
-      relay = new RelayServer({
-        port,
-        requireTls: false,
-        deviceSecrets: { [current.deviceId]: current.deviceSecret },
-        allowAutoRegister: true,
-      })
-      await relay.start()
-      relayUrl = `ws://127.0.0.1:${relay.port}`
-      phoneRelayUrl = `ws://${lanIPv4()}:${relay.port}`
-    } else {
-      relayUrl = nextUrl
-      phoneRelayUrl = nextUrl
-    }
+    relayUrl = nextUrl
     state.relayUrl = relayUrl
-    startClient(relayUrl)
+    startClient()
   }
 
   // Precedence: the panel-persisted address wins, then cordis.yml config, then
-  // the embedded local relay.
+  // the local relay default.
   const stored = scope.get() as { relayUrl?: string } | undefined
-  const initialUrl = stored?.relayUrl && stored.relayUrl !== '' ? stored.relayUrl : config.relayUrl
+  const initialUrl = stored?.relayUrl && stored.relayUrl !== '' ? stored.relayUrl : config.relayUrl ?? DEFAULT_RELAY_URL
   await reconfigure(initialUrl)
 
   const requireClient = (): RelayClient => {
@@ -162,8 +123,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
 
   const setRelayUrl = async (url: string): Promise<{ ok: boolean }> => {
-    await scope.update({ relayUrl: url })
-    await reconfigure(url === '' ? undefined : url)
+    const next = url === '' ? DEFAULT_RELAY_URL : url
+    await scope.update({ relayUrl: next })
+    await reconfigure(next)
     return { ok: true }
   }
 
@@ -197,7 +159,5 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.effect(() => () => {
     client?.stop()
     client = undefined
-    void relay?.close()
-    relay = undefined
   })
 }

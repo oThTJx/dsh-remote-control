@@ -10,7 +10,7 @@ dsh plugin --profile web add @firefly0621/dsh-remote-control
 
 The browser pairing panel (`@firefly0621/dsh-client-ui-remote-control`) is a dependency of this package, so one install brings the host plugin and the 设置 → 插件 → 远程控制 tab together.
 
-**Zero-config default**: with no configuration at all, the plugin embeds a local relay on `ws://127.0.0.1:8787`, auto-generates a `deviceId`/`deviceSecret` (persisted in the settings namespace `remote-control`, secret redacted on every wire surface), and exposes a pairing panel in Web 设置 → 插件 → 远程控制: a QR code + 6-digit pairing code, the bound-device list with per-device removal, and a "reset device identity" action. A phone scans the QR (or types the code) once and stays paired — the app resumes with its stored token afterwards.
+**Quick start**: start a relay locally (`@firefly0621/dsh-remote-relay`, default `ws://127.0.0.1:8787`) or point at your own — the plugin defaults to `ws://127.0.0.1:8787`, auto-generates a `deviceId`/`deviceSecret` (persisted in the settings namespace `remote-control`, secret redacted on every wire surface), and the pairing panel shows a QR code + 6-digit pairing code, the bound-device list with per-device removal, and a "reset device identity" action. A phone scans the QR (or types the code) once and stays paired — the app resumes with its stored token afterwards. The relay address is editable live in the panel.
 
 Production just configures the relay:
 
@@ -26,10 +26,9 @@ Production just configures the relay:
 
 | Key | Type | Meaning |
 |---|---|---|
-| `relayUrl` | string | Public relay WSS URL, e.g. `wss://relay.example.com`; absent starts an embedded local relay on `port`. Also editable live from the pairing panel (设置 → 插件 → 远程控制); the panel-persisted value wins over cordis.yml, and an empty value selects the embedded relay. |
+| `relayUrl` | string | Public relay WSS URL, e.g. `wss://relay.example.com`; absent defaults to `ws://127.0.0.1:8787` (a locally running relay). Also editable live from the pairing panel (设置 → 插件 → 远程控制); the panel-persisted value wins over cordis.yml. |
 | `deviceId` | string | Stable device id; auto-generated and persisted when absent. |
 | `deviceSecret` | string | Long-lived secret; auto-generated and persisted when absent. |
-| `port` | number | Embedded local relay port; defaults to 8787. |
 
 ## Behavior
 
@@ -57,4 +56,4 @@ None; the plugin never assembles or sends a model request.
 
 - **No enable/disable/install/uninstall** — the Loader is the sole lifecycle authority and exposes no mutation path; inventory is read-only and settings edits only touch the user-settings document.
 - **Pairing code is relay-minted** — the device displays but does not generate codes; rotating codes requires a relay-side change (the device can force one by reconnecting).
-- **Embedded local relay sessions are in-memory** — the zero-config test relay clears sessions on dsh restart; durable sessions require the standalone relay with `DSH_RELAY_DATA_DIR`.
+- **Relay sessions persist only with `DSH_RELAY_DATA_DIR`** — without it a relay restart clears sessions and phones must re-pair.

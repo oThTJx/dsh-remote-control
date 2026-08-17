@@ -165,7 +165,7 @@ describe('remote-control real composition', () => {
     const gateway = ctx.get('remoteControl') as RemoteControlGateway
     const pairing = await gateway.pairing()
     expect(pairing.code).toMatch(/^\d{6}$/)
-    expect(pairing.phoneRelayUrl).toBe(`ws://127.0.0.1:${relay.port}`)
+    expect(pairing.relayUrl).toBe(`ws://127.0.0.1:${relay.port}`)
     expect(pairing.qrDataUrl).toMatch(/^data:image\/png;base64,/)
 
     // setRelayUrl persists the address and reconnects; the settings document
@@ -178,8 +178,8 @@ describe('remote-control real composition', () => {
     app.close()
   })
 
-  it('boots with an embedded local relay and exposes pairing', async () => {
-    root = await mkdtemp(join(tmpdir(), 'dsh-remote-control-embedded-'))
+  it('connects to a relay configured from the pairing panel', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-remote-control-configure-'))
     const settingsPath = join(root, 'settings.yaml')
     await writeFile(settingsPath, 'ui-theme:\n  theme: light\n')
 
@@ -194,10 +194,13 @@ describe('remote-control real composition', () => {
       '  name: test-theme-consumer',
       '- id: remote',
       "  name: '@firefly0621/dsh-remote-control'",
-      '  config:',
-      '    port: 0',
+      '  config: {}',
       '',
     ].join('\n'))
+
+    // A relay the panel later points the plugin at.
+    const relay = new RelayServer({ port: 0, requireTls: false, deviceSecrets: {}, allowAutoRegister: true })
+    await relay.start()
 
     const ctx = new Context()
     context = ctx
@@ -221,12 +224,17 @@ describe('remote-control real composition', () => {
     await new Promise(resolve => setTimeout(resolve, 100))
 
     const gateway = ctx.get('remoteControl') as RemoteControlGateway
-    const pairing = await gateway.pairing()
-    expect(pairing.code).toMatch(/^\d{6}$/)
-    expect(pairing.phoneRelayUrl).toMatch(/^ws:\/\/[^:]+:\d+$/)
-    expect(pairing.qrDataUrl).toMatch(/^data:image\/png;base64,/)
 
-    // The auto-generated identity was persisted into the settings document.
-    expect(await readFile(settingsPath, 'utf8')).toContain('remote-control:')
+    // The panel saves the relay address; the plugin reconnects and the code mints.
+    await gateway.setRelayUrl(`ws://127.0.0.1:${relay.port}`)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    const after = await gateway.pairing()
+    expect(after.code).toMatch(/^\d{6}$/)
+    expect(after.relayUrl).toBe(`ws://127.0.0.1:${relay.port}`)
+    expect(after.qrDataUrl).toMatch(/^data:image\/png;base64,/)
+
+    // The address was persisted into the settings document.
+    expect(await readFile(settingsPath, 'utf8')).toContain('relayUrl:')
+    await relay.close()
   })
 })

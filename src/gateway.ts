@@ -47,9 +47,9 @@ export class RemoteControlGateway extends TypertRemoteService {
   @Remote('pairing')
   async pairing(): Promise<PairingSnapshot> {
     const snapshot = this.deps.pairing()
-    if (snapshot.code !== undefined && snapshot.phoneRelayUrl !== undefined) {
+    if (snapshot.code !== undefined && snapshot.relayUrl !== undefined) {
       // Memoize the rendered QR on the live snapshot per code.
-      snapshot.qrDataUrl = await qrDataUrl(qrPayload(snapshot.phoneRelayUrl, snapshot.code))
+      snapshot.qrDataUrl = await qrDataUrl(qrPayload(snapshot.relayUrl, snapshot.code))
     }
     return snapshot
   }

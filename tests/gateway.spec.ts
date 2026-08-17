@@ -8,7 +8,7 @@ function deps(overrides?: Partial<RemoteControlGatewayDeps>): RemoteControlGatew
       status: 'pairing',
       code: '123456',
       expiresAt: 1_000_000,
-      phoneRelayUrl: 'ws://relay.example.com',
+      relayUrl: 'ws://relay.example.com',
     }),
     sessions: async () => ({ sessions: [] }),
     revoke: async () => ({ revoked: true }),

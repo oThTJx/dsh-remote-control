@@ -4,15 +4,13 @@ import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 export interface PairingSnapshot {
   /** Relay connection state; `error` carries a message in `error`. */
   status: 'connecting' | 'pairing' | 'error'
-  /** Effective outbound relay URL, or absent when the embedded local relay is used. */
+  /** Effective relay URL, shown to the phone and encoded in the QR. */
   relayUrl?: string
   /** Current 6-digit pairing code, when the relay has issued one. */
   code?: string
   /** Code expiry epoch ms, when a code is live. */
   expiresAt?: number
-  /** Phone-reachable relay URL the code pairs against. */
-  phoneRelayUrl?: string
-  /** PNG data URL of the QR encoding the phone-reachable URL and code. */
+  /** PNG data URL of the QR encoding the relay URL and code. */
   qrDataUrl?: string
   /** Human-readable failure, when `status` is `error`. */
   error?: string

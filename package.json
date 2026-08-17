@@ -56,7 +56,6 @@
   "license": "MIT",
   "dependencies": {
     "@firefly0621/dsh-remote-protocol": "workspace:^",
-    "@firefly0621/dsh-remote-relay": "workspace:^",
     "@firefly0621/dsh-client-ui-remote-control": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "qrcode": "^1.5.4",
@@ -72,6 +71,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@firefly0621/dsh-remote-relay": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-settings-file": "workspace:^",
