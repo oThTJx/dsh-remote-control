@@ -1,0 +1,44 @@
+import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { RemoteControlGateway, type RemoteControlGatewayDeps } from '../src/gateway.ts'
+
+function deps(overrides?: Partial<RemoteControlGatewayDeps>): RemoteControlGatewayDeps {
+  return {
+    pairing: () => ({
+      status: 'pairing',
+      code: '123456',
+      expiresAt: 1_000_000,
+      phoneRelayUrl: 'ws://relay.example.com',
+    }),
+    sessions: async () => ({ sessions: [] }),
+    revoke: async () => ({ revoked: true }),
+    resetIdentity: async () => ({ deviceId: 'fresh-id' }),
+    ...overrides,
+  }
+}
+
+describe('RemoteControlGateway', () => {
+  it('registers the remoteControl service with a typert binding', () => {
+    const ctx = new Context()
+    const gateway = new RemoteControlGateway(ctx, deps())
+    expect(gateway.typertRemote.serviceKey).toBe('remoteControl')
+    const svc = ctx.get('remoteControl') as RemoteControlGateway
+    expect(svc.typertRemote.serviceKey).toBe('remoteControl')
+    expect(typeof svc.pairing).toBe('function')
+  })
+
+  it('returns the pairing snapshot with a QR data URL', async () => {
+    const ctx = new Context()
+    const gateway = new RemoteControlGateway(ctx, deps())
+    const snapshot = await gateway.pairing()
+    expect(snapshot.code).toBe('123456')
+    expect(snapshot.qrDataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('revokes a session and resets identity through the deps', async () => {
+    const ctx = new Context()
+    const gateway = new RemoteControlGateway(ctx, deps())
+    expect(await gateway.revoke('token-1')).toEqual({ revoked: true })
+    expect(await gateway.resetIdentity()).toEqual({ deviceId: 'fresh-id' })
+  })
+})

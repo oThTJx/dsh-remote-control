@@ -1,0 +1,13 @@
+# Installable overlay patch for `@firefly0621/dsh-remote-control`.
+# Opt-in: not mounted by default on fork `dsh-base`. Prefer:
+#   dsh plugin --profile web add @firefly0621/dsh-remote-control
+# Configure relayUrl/deviceId/deviceSecret in the profile's cordis.patch.yml:
+#   - update:
+#       - id: remote-control
+#         config:
+#           relayUrl: wss://relay.example.com
+#           deviceId: my-pc
+#           deviceSecret: <the secret you registered on the relay>
+- insert:
+    - id: remote-control
+      name: '@firefly0621/dsh-remote-control'
