@@ -4,6 +4,7 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from 'zod'
 import { qrDataUrl, qrPayload } from './pairing-state.ts'
 import type {
+  ConnectionActionSnapshot,
   PairingSnapshot,
   ResetIdentitySnapshot,
   RevokeSnapshot,
@@ -13,6 +14,7 @@ import type {
 } from './types.ts'
 
 export type {
+  ConnectionActionSnapshot,
   PairingSnapshot,
   ResetIdentitySnapshot,
   RevokeSnapshot,
@@ -25,6 +27,10 @@ export type {
 export interface RemoteControlGatewayDeps {
   /** Current pairing snapshot, live. */
   pairing(): PairingSnapshot
+  /** Explicitly connect to the current relay address. */
+  connect(): Promise<ConnectionActionSnapshot>
+  /** Explicitly drop the connection and clear the pairing code. */
+  disconnect(): Promise<ConnectionActionSnapshot>
   /** Bound app sessions of this device, from the relay. */
   sessions(): Promise<SessionsSnapshot>
   /** Ask the relay to drop one app session. */
@@ -82,5 +88,17 @@ export class RemoteControlGateway extends TypertRemoteService {
   @Remote('setRelayUrl')
   async setRelayUrl(url: string): Promise<SetRelayUrlSnapshot> {
     return this.deps.setRelayUrl(url)
+  }
+
+  /** Explicitly connect to the configured relay. */
+  @Remote('connect')
+  async connect(): Promise<ConnectionActionSnapshot> {
+    return this.deps.connect()
+  }
+
+  /** Explicitly disconnect and clear the pairing code. */
+  @Remote('disconnect')
+  async disconnect(): Promise<ConnectionActionSnapshot> {
+    return this.deps.disconnect()
   }
 }

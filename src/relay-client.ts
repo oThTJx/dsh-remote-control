@@ -9,6 +9,8 @@ export interface RelayClientOptions {
   deviceSecret: string
   /** Invoked when the relay issues a fresh pairing code. */
   onPairing?: (payload: { code: string; expiresAt: number }) => void
+  /** Invoked when a connect attempt fails before the socket opens. */
+  onFailure?: (error: Error) => void
   onMessage: (envelope: Envelope) => void
 }
 
@@ -121,7 +123,12 @@ export class RelayClient {
       if (this.stopped || this.socket !== socket) return
       this.scheduleReconnect()
     })
-    socket.on('error', () => { socket.terminate() })
+    socket.on('error', () => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        this.options.onFailure?.(new Error(`cannot reach relay at ${this.options.relayUrl}`))
+      }
+      socket.terminate()
+    })
   }
 
   private scheduleReconnect(): void {

@@ -37,7 +37,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const { identity, scope } = resolveIdentity(ctx, config)
   let current: Identity = identity
 
-  const state: PairingSnapshot = { status: 'connecting' }
+  const state: PairingSnapshot = { status: 'disconnected' }
 
   const handler = createHandler({
     loader: ctx.loader,
@@ -57,6 +57,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         state.status = 'pairing'
         state.code = payload.code
         state.expiresAt = payload.expiresAt
+        delete state.error
+      },
+      onFailure: (error) => {
+        state.status = 'error'
+        state.error = error.message
       },
       onMessage: (message) => {
         if (message.type === 'request') {
@@ -87,25 +92,52 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     client.start()
   }
 
-  /** Point the connection at a new relay address, tearing down the previous client first. */
-  const reconfigure = async (nextUrl: string): Promise<void> => {
-    client?.stop()
-    client = undefined
-    state.status = 'connecting'
+  /** Clear the pairing code and any error, keeping the address. */
+  const resetPairingState = (): void => {
+    state.status = 'disconnected'
     delete state.code
     delete state.expiresAt
     delete state.qrDataUrl
     delete state.error
+  }
+
+  /** Explicitly connect to the current relay address. */
+  const connect = async (): Promise<{ ok: boolean }> => {
+    resetPairingState()
+    state.status = 'connecting'
+    startClient()
+    return { ok: true }
+  }
+
+  /** Explicitly drop the connection and clear the pairing code. */
+  const disconnect = async (): Promise<{ ok: boolean }> => {
+    client?.stop()
+    client = undefined
+    resetPairingState()
+    return { ok: true }
+  }
+
+  /** Point the connection at a new relay address; reconnects only when already active. */
+  const reconfigure = async (nextUrl: string): Promise<void> => {
+    const active = client !== undefined
+    client?.stop()
+    client = undefined
+    resetPairingState()
     relayUrl = nextUrl
     state.relayUrl = relayUrl
-    startClient()
+    if (active) {
+      state.status = 'connecting'
+      startClient()
+    }
   }
 
   // Precedence: the panel-persisted address wins, then cordis.yml config, then
-  // the local relay default.
+  // the local relay default. The plugin stays disconnected until the user
+  // presses 连接.
   const stored = scope.get() as { relayUrl?: string } | undefined
   const initialUrl = stored?.relayUrl && stored.relayUrl !== '' ? stored.relayUrl : config.relayUrl ?? DEFAULT_RELAY_URL
-  await reconfigure(initialUrl)
+  relayUrl = initialUrl
+  state.relayUrl = relayUrl
 
   const requireClient = (): RelayClient => {
     if (client === undefined || !client.connected) throw new Error('relay not connected')
@@ -131,6 +163,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   new RemoteControlGateway(ctx, {
     pairing: () => state,
+    connect,
+    disconnect,
     sessions: async () => {
       const reply = await requireClient().request('sessions.list', {})
       if (reply.type === 'error') throw new Error((reply.payload as { message: string }).message)

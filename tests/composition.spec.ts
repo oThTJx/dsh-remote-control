@@ -132,7 +132,12 @@ describe('remote-control real composition', () => {
     } as unknown as NonNullable<typeof ctx.loader.internal>
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
     await ctx.loader.await()
-    // Give the plugin's outbound client a moment to register.
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    // The plugin boots disconnected; connect explicitly so the pairing code mints.
+    const gateway = ctx.get('remoteControl') as RemoteControlGateway
+    expect((await gateway.pairing()).status).toBe('disconnected')
+    await gateway.connect()
     await new Promise(resolve => setTimeout(resolve, 100))
 
     // plugin.list: the plugin must be in the inventory (it is a Loader entry).
@@ -162,7 +167,6 @@ describe('remote-control real composition', () => {
     expect(await readFile(settingsPath, 'utf8')).toContain('theme: dark')
 
     // The GUI-facing gateway exposes the live pairing code and a QR data URL.
-    const gateway = ctx.get('remoteControl') as RemoteControlGateway
     const pairing = await gateway.pairing()
     expect(pairing.code).toMatch(/^\d{6}$/)
     expect(pairing.relayUrl).toBe(`ws://127.0.0.1:${relay.port}`)
@@ -175,6 +179,13 @@ describe('remote-control real composition', () => {
     await new Promise(resolve => setTimeout(resolve, 100))
     const pairingAfter = await gateway.pairing()
     expect(pairingAfter.code).toMatch(/^\d{6}$/)
+
+    // disconnect clears the code; reconnect mints a fresh one.
+    await gateway.disconnect()
+    expect((await gateway.pairing()).code).toBeUndefined()
+    await gateway.connect()
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect((await gateway.pairing()).code).toMatch(/^\d{6}$/)
     app.close()
   })
 
@@ -225,8 +236,10 @@ describe('remote-control real composition', () => {
 
     const gateway = ctx.get('remoteControl') as RemoteControlGateway
 
-    // The panel saves the relay address; the plugin reconnects and the code mints.
+    // The panel saves the relay address (still disconnected), then connects.
     await gateway.setRelayUrl(`ws://127.0.0.1:${relay.port}`)
+    expect((await gateway.pairing()).status).toBe('disconnected')
+    await gateway.connect()
     await new Promise(resolve => setTimeout(resolve, 150))
     const after = await gateway.pairing()
     expect(after.code).toMatch(/^\d{6}$/)

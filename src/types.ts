@@ -3,7 +3,7 @@ import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 /** Pairing status exposed to the web GUI. The gateway memoizes `qrDataUrl` in place. */
 export interface PairingSnapshot {
   /** Relay connection state; `error` carries a message in `error`. */
-  status: 'connecting' | 'pairing' | 'error'
+  status: 'disconnected' | 'connecting' | 'pairing' | 'error'
   /** Effective relay URL, shown to the phone and encoded in the QR. */
   relayUrl?: string
   /** Current 6-digit pairing code, when the relay has issued one. */
@@ -39,5 +39,10 @@ export interface TestConnectionSnapshot {
 
 /** Result of updating the live relay address from the pairing panel. */
 export interface SetRelayUrlSnapshot {
+  readonly ok: boolean
+}
+
+/** Result of the explicit connect / disconnect actions. */
+export interface ConnectionActionSnapshot {
   readonly ok: boolean
 }

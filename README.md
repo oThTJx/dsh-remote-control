@@ -10,7 +10,7 @@ dsh plugin --profile web add @firefly0621/dsh-remote-control
 
 The browser pairing panel (`@firefly0621/dsh-client-ui-remote-control`) is a dependency of this package, so one install brings the host plugin and the 设置 → 插件 → 远程控制 tab together.
 
-**Quick start**: start a relay locally (`@firefly0621/dsh-remote-relay`, default `ws://127.0.0.1:8787`) or point at your own — the plugin defaults to `ws://127.0.0.1:8787`, auto-generates a `deviceId`/`deviceSecret` (persisted in the settings namespace `remote-control`, secret redacted on every wire surface), and the pairing panel shows a QR code + 6-digit pairing code, the bound-device list with per-device removal, and a "reset device identity" action. A phone scans the QR (or types the code) once and stays paired — the app resumes with its stored token afterwards. The relay address is editable live in the panel.
+**Connection is explicit**: the plugin stays disconnected until you press **连接** in the pairing panel; the QR + 6-digit pairing code appear only after the connection succeeds (the relay mints the code over the live link). **断开连接** drops it and clears the code. Start a relay locally (`@firefly0621/dsh-remote-relay`, default `ws://127.0.0.1:8787`) or point at your own — the plugin defaults to `ws://127.0.0.1:8787`, auto-generates a `deviceId`/`deviceSecret` (persisted in the settings namespace `remote-control`, secret redacted on every wire surface), and the relay address is editable live in the panel. A phone scans the QR (or types the code) once and stays paired — the app resumes with its stored token afterwards.
 
 Production just configures the relay:
 
@@ -32,7 +32,7 @@ Production just configures the relay:
 
 ## Behavior
 
-- On connect the plugin authenticates with `hello { deviceSecret }`; the relay mints a 6-digit pairing code and sends it back via `pairing.issue`. The web GUI panel shows the code plus a QR encoding `relay=<url>&code=<6位码>`, and a **测试连接** button that runs one real wire round-trip against the relay before relying on the code.
+- Connection is explicit: **连接** starts the outbound client, **断开连接** stops it and clears the code. On connect the plugin authenticates with `hello { deviceSecret }`; the relay mints a 6-digit pairing code and sends it back via `pairing.issue`. The web GUI panel shows the code plus a QR encoding `relay=<url>&code=<6位码>`, and a **测试连接** button that runs one real wire round-trip against the relay. Connection failures surface as an error status with the reason.
 - Commands over the wire:
   - `plugin.list` → current non-group Loader entries (id, module, enabled, fiber phase).
   - `settings.describe` → every registered settings namespace via `ctx.settings.describe({ redactSecrets: true })` — secret fields never leave the host.

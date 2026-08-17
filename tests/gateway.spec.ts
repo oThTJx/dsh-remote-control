@@ -10,6 +10,8 @@ function deps(overrides?: Partial<RemoteControlGatewayDeps>): RemoteControlGatew
       expiresAt: 1_000_000,
       relayUrl: 'ws://relay.example.com',
     }),
+    connect: async () => ({ ok: true }),
+    disconnect: async () => ({ ok: true }),
     sessions: async () => ({ sessions: [] }),
     revoke: async () => ({ revoked: true }),
     resetIdentity: async () => ({ deviceId: 'fresh-id' }),
@@ -56,5 +58,12 @@ describe('RemoteControlGateway', () => {
     const ctx = new Context()
     const gateway = new RemoteControlGateway(ctx, deps())
     expect(await gateway.setRelayUrl('wss://relay.example.com')).toEqual({ ok: true })
+  })
+
+  it('passes connect and disconnect through the deps', async () => {
+    const ctx = new Context()
+    const gateway = new RemoteControlGateway(ctx, deps())
+    expect(await gateway.connect()).toEqual({ ok: true })
+    expect(await gateway.disconnect()).toEqual({ ok: true })
   })
 })
