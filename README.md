@@ -27,20 +27,9 @@ Production just configures the relay:
 | Key | Type | Meaning |
 |---|---|---|
 | `relayUrl` | string | Public relay WSS URL, e.g. `wss://relay.example.com`; absent starts an embedded local relay on `port`. |
-| `phoneRelayUrl` | string | The address phones use to reach the relay, shown in the QR and pairing panel. Defaults to `relayUrl`, or the auto-detected LAN IP for the embedded relay. Self-hosters behind a domain or port-forward set it explicitly when the phone-facing address differs. |
 | `deviceId` | string | Stable device id; auto-generated and persisted when absent. |
 | `deviceSecret` | string | Long-lived secret; auto-generated and persisted when absent. |
 | `port` | number | Embedded local relay port; defaults to 8787. |
-
-cordis.yml example:
-
-```yaml
-plugins:
-  remote-control:
-    relayUrl: wss://relay.example.com
-    # optional: point the QR at a public address that differs from relayUrl
-    phoneRelayUrl: wss://public.example.com
-```
 
 ## Behavior
 

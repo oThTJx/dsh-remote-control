@@ -108,7 +108,6 @@ describe('remote-control real composition', () => {
       "  name: '@firefly0621/dsh-remote-control'",
       '  config:',
       `    relayUrl: ${JSON.stringify(`ws://127.0.0.1:${relay.port}`)}`,
-      "    phoneRelayUrl: 'wss://public.example.com'",
       '    deviceId: test-pc',
       '    deviceSecret: dev-secret',
       '',
@@ -166,7 +165,7 @@ describe('remote-control real composition', () => {
     const gateway = ctx.get('remoteControl') as RemoteControlGateway
     const pairing = await gateway.pairing()
     expect(pairing.code).toMatch(/^\d{6}$/)
-    expect(pairing.phoneRelayUrl).toBe('wss://public.example.com')
+    expect(pairing.phoneRelayUrl).toBe(`ws://127.0.0.1:${relay.port}`)
     expect(pairing.qrDataUrl).toMatch(/^data:image\/png;base64,/)
     app.close()
   })
