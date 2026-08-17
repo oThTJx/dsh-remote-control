@@ -43,7 +43,7 @@ Production just configures the relay:
 
 ## Relay
 
-The relay is `@firefly0621/dsh-remote-relay` (standalone Node service, also published to npm). Its deployment env: `PORT`, `NODE_ENV=production` (requires TLS), `TLS_CERT`/`TLS_KEY`, `DSH_RELAY_DEVICE_SECRETS`, optional `DSH_RELAY_ALLOW_AUTO_REGISTER=1` (first hello for an unknown random deviceId binds it — the zero-config mode), and optional `DSH_RELAY_DATA_DIR` (durable session storage so a paired phone resumes after a relay restart). See [apps/relay-server](../../../apps/relay-server/README.md).
+The relay is `@firefly0621/dsh-remote-relay` (standalone Node service, also published to npm). Its deployment env: `PORT`, `NODE_ENV=production` (requires TLS), `TLS_CERT`/`TLS_KEY`, `DSH_RELAY_DEVICE_SECRETS`, optional `DSH_RELAY_ALLOW_AUTO_REGISTER=1` (first hello for an unknown random deviceId binds it — the zero-config mode), and optional `DSH_RELAY_DATA_DIR` (durable session storage so a paired phone resumes after a relay restart). See the [dsh-remote-relay repo](https://github.com/oThTJx/dsh-remote-relay).
 
 ## Model Experience
 
