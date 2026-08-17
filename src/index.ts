@@ -15,6 +15,13 @@ import type { PairingSnapshot } from './pairing-state.ts'
 export interface Config {
   /** Public relay WSS URL, e.g. wss://relay.example.com; absent starts an embedded local relay on `port`. */
   relayUrl?: string
+  /**
+   * The address phones use to reach the relay, shown in the pairing QR and
+   * panel. Defaults to `relayUrl`, or the auto-detected LAN IP when the
+   * embedded relay is used. Self-hosters behind a domain or port-forward set
+   * this explicitly when the phone-facing address differs from the outbound one.
+   */
+  phoneRelayUrl?: string
   /** Stable device id; auto-generated and persisted when absent. */
   deviceId?: string
   /** Long-lived secret registered on the relay for this deviceId; auto-generated and persisted when absent. */
@@ -29,6 +36,7 @@ export const inject = ['settings', 'loader']
 
 export const Config: z<Config> = z.object({
   relayUrl: z.string(),
+  phoneRelayUrl: z.string(),
   deviceId: z.string(),
   deviceSecret: z.string().role('secret'),
   port: z.number(),
@@ -72,6 +80,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   } else {
     phoneRelayUrl = relayUrl
   }
+  // Explicit phone-facing override wins; self-hosters behind a domain or
+  // port-forward point the QR at their public address this way.
+  if (config.phoneRelayUrl !== undefined) phoneRelayUrl = config.phoneRelayUrl
 
   const handler = createHandler({
     loader: ctx.loader,
