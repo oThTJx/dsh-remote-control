@@ -30,3 +30,9 @@ export interface RevokeSnapshot {
 export interface ResetIdentitySnapshot {
   readonly deviceId: string
 }
+
+/** Result of an explicit relay connection test, surfaced to the pairing panel. */
+export interface TestConnectionSnapshot {
+  readonly ok: boolean
+  readonly message: string
+}

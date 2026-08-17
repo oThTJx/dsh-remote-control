@@ -160,6 +160,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return { revoked: (reply.payload as { revoked?: boolean }).revoked ?? false }
     },
     resetIdentity,
+    testConnection: async () => {
+      if (state.error !== undefined) return { ok: false, message: state.error }
+      try {
+        // One real wire round-trip: a registered device always gets a
+        // sessions.list reply, so a reply proves the whole path end to end.
+        await requireClient().request('sessions.list', {}, 3_000)
+        return { ok: true, message: 'relay reachable' }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : String(error) }
+      }
+    },
   })
 
   ctx.effect(() => () => {

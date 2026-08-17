@@ -13,6 +13,7 @@ function deps(overrides?: Partial<RemoteControlGatewayDeps>): RemoteControlGatew
     sessions: async () => ({ sessions: [] }),
     revoke: async () => ({ revoked: true }),
     resetIdentity: async () => ({ deviceId: 'fresh-id' }),
+    testConnection: async () => ({ ok: true, message: 'relay reachable' }),
     ...overrides,
   }
 }
@@ -40,5 +41,13 @@ describe('RemoteControlGateway', () => {
     const gateway = new RemoteControlGateway(ctx, deps())
     expect(await gateway.revoke('token-1')).toEqual({ revoked: true })
     expect(await gateway.resetIdentity()).toEqual({ deviceId: 'fresh-id' })
+  })
+
+  it('passes the connection test through the deps', async () => {
+    const ctx = new Context()
+    const gateway = new RemoteControlGateway(ctx, deps({
+      testConnection: async () => ({ ok: false, message: 'relay not connected' }),
+    }))
+    expect(await gateway.testConnection()).toEqual({ ok: false, message: 'relay not connected' })
   })
 })

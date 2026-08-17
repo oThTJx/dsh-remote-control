@@ -8,6 +8,7 @@ import type {
   ResetIdentitySnapshot,
   RevokeSnapshot,
   SessionsSnapshot,
+  TestConnectionSnapshot,
 } from './types.ts'
 
 export type {
@@ -15,6 +16,7 @@ export type {
   ResetIdentitySnapshot,
   RevokeSnapshot,
   SessionsSnapshot,
+  TestConnectionSnapshot,
 } from './types.ts'
 
 /** Host services the gateway reads, narrowed to what the GUI needs. */
@@ -27,6 +29,8 @@ export interface RemoteControlGatewayDeps {
   revoke(sessionId: string): Promise<RevokeSnapshot>
   /** Regenerate the identity and reconnect; old sessions are orphaned. */
   resetIdentity(): Promise<ResetIdentitySnapshot>
+  /** One explicit wire round-trip against the relay, for the connection test. */
+  testConnection(): Promise<TestConnectionSnapshot>
 }
 
 /** Remote-only service exposing pairing status and session management to the web GUI. */
@@ -62,5 +66,11 @@ export class RemoteControlGateway extends TypertRemoteService {
   @Remote('resetIdentity')
   async resetIdentity(): Promise<ResetIdentitySnapshot> {
     return this.deps.resetIdentity()
+  }
+
+  /** Explicit relay connection test; the pairing panel runs it before showing the QR. */
+  @Remote('testConnection')
+  async testConnection(): Promise<TestConnectionSnapshot> {
+    return this.deps.testConnection()
   }
 }

@@ -21,7 +21,7 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../../apps/relay-server"
+      "path": "../../../apps/remote-relay"
     },
     {
       "path": "../../typert/protocol"

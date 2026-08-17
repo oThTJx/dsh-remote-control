@@ -44,7 +44,7 @@ plugins:
 
 ## Behavior
 
-- On connect the plugin authenticates with `hello { deviceSecret }`; the relay mints a 6-digit pairing code and sends it back via `pairing.issue`. The web GUI panel shows the code plus a QR encoding `relay=<url>&code=<6位码>`.
+- On connect the plugin authenticates with `hello { deviceSecret }`; the relay mints a 6-digit pairing code and sends it back via `pairing.issue`. The web GUI panel shows the code plus a QR encoding `relay=<url>&code=<6位码>`, and a **测试连接** button that runs one real wire round-trip against the relay before relying on the code.
 - Commands over the wire:
   - `plugin.list` → current non-group Loader entries (id, module, enabled, fiber phase).
   - `settings.describe` → every registered settings namespace via `ctx.settings.describe({ redactSecrets: true })` — secret fields never leave the host.
