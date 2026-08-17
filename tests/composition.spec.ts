@@ -167,6 +167,14 @@ describe('remote-control real composition', () => {
     expect(pairing.code).toMatch(/^\d{6}$/)
     expect(pairing.phoneRelayUrl).toBe(`ws://127.0.0.1:${relay.port}`)
     expect(pairing.qrDataUrl).toMatch(/^data:image\/png;base64,/)
+
+    // setRelayUrl persists the address and reconnects; the settings document
+    // records it and a fresh pairing code is minted over the new connection.
+    await gateway.setRelayUrl(`ws://127.0.0.1:${relay.port}`)
+    expect(await readFile(settingsPath, 'utf8')).toContain('relayUrl:')
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const pairingAfter = await gateway.pairing()
+    expect(pairingAfter.code).toMatch(/^\d{6}$/)
     app.close()
   })
 

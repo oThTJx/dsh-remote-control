@@ -8,6 +8,7 @@ import type {
   ResetIdentitySnapshot,
   RevokeSnapshot,
   SessionsSnapshot,
+  SetRelayUrlSnapshot,
   TestConnectionSnapshot,
 } from './types.ts'
 
@@ -16,6 +17,7 @@ export type {
   ResetIdentitySnapshot,
   RevokeSnapshot,
   SessionsSnapshot,
+  SetRelayUrlSnapshot,
   TestConnectionSnapshot,
 } from './types.ts'
 
@@ -31,6 +33,8 @@ export interface RemoteControlGatewayDeps {
   resetIdentity(): Promise<ResetIdentitySnapshot>
   /** One explicit wire round-trip against the relay, for the connection test. */
   testConnection(): Promise<TestConnectionSnapshot>
+  /** Persist and apply a new relay address; '' selects the embedded local relay. */
+  setRelayUrl(url: string): Promise<SetRelayUrlSnapshot>
 }
 
 /** Remote-only service exposing pairing status and session management to the web GUI. */
@@ -72,5 +76,11 @@ export class RemoteControlGateway extends TypertRemoteService {
   @Remote('testConnection')
   async testConnection(): Promise<TestConnectionSnapshot> {
     return this.deps.testConnection()
+  }
+
+  /** Persist and apply a new relay address from the pairing panel. */
+  @Remote('setRelayUrl')
+  async setRelayUrl(url: string): Promise<SetRelayUrlSnapshot> {
+    return this.deps.setRelayUrl(url)
   }
 }

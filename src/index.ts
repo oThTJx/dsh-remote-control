@@ -51,38 +51,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const state: PairingSnapshot = { status: 'connecting' }
 
-  // Zero-config default: embed a local relay on this host so a fresh install
-  // pairs against ws://127.0.0.1:8787 with no deployment steps at all.
-  let relay: RelayServer | undefined
-  let relayUrl = config.relayUrl
-  let phoneRelayUrl: string
-  if (relayUrl === undefined) {
-    const port = config.port ?? 8787
-    // The embedded relay accepts the auto-generated identity's first hello and
-    // lets a reset identity register after a fresh generation.
-    relay = new RelayServer({
-      port,
-      requireTls: false,
-      deviceSecrets: { [current.deviceId]: current.deviceSecret },
-      allowAutoRegister: true,
-    })
-    await relay.start()
-    relayUrl = `ws://127.0.0.1:${relay.port}`
-    phoneRelayUrl = `ws://${lanIPv4()}:${relay.port}`
-  } else {
-    phoneRelayUrl = relayUrl
-  }
-
   const handler = createHandler({
     loader: ctx.loader,
     settings: ctx.settings,
   })
 
   let client: RelayClient | undefined
-  const startClient = (): void => {
+  let relay: RelayServer | undefined
+  let relayUrl: string | undefined
+  let phoneRelayUrl: string
+
+  const startClient = (targetUrl: string): void => {
     client?.stop()
     client = new RelayClient({
-      relayUrl,
+      relayUrl: targetUrl,
       deviceId: current.deviceId,
       deviceSecret: current.deviceSecret,
       onPairing: (payload) => {
@@ -119,7 +101,50 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     })
     client.start()
   }
-  startClient()
+
+  /**
+   * Point the connection at `nextUrl` (undefined = the embedded local relay),
+   * tearing down the previous client and embedded relay first.
+   */
+  const reconfigure = async (nextUrl: string | undefined): Promise<void> => {
+    client?.stop()
+    client = undefined
+    if (relay !== undefined) {
+      await relay.close()
+      relay = undefined
+    }
+    state.status = 'connecting'
+    delete state.code
+    delete state.expiresAt
+    delete state.phoneRelayUrl
+    delete state.qrDataUrl
+    delete state.error
+    if (nextUrl === undefined) {
+      const port = config.port ?? 8787
+      // The embedded relay accepts the auto-generated identity's first hello
+      // and lets a reset identity register after a fresh generation.
+      relay = new RelayServer({
+        port,
+        requireTls: false,
+        deviceSecrets: { [current.deviceId]: current.deviceSecret },
+        allowAutoRegister: true,
+      })
+      await relay.start()
+      relayUrl = `ws://127.0.0.1:${relay.port}`
+      phoneRelayUrl = `ws://${lanIPv4()}:${relay.port}`
+    } else {
+      relayUrl = nextUrl
+      phoneRelayUrl = nextUrl
+    }
+    state.relayUrl = relayUrl
+    startClient(relayUrl)
+  }
+
+  // Precedence: the panel-persisted address wins, then cordis.yml config, then
+  // the embedded local relay.
+  const stored = scope.get() as { relayUrl?: string } | undefined
+  const initialUrl = stored?.relayUrl && stored.relayUrl !== '' ? stored.relayUrl : config.relayUrl
+  await reconfigure(initialUrl)
 
   const requireClient = (): RelayClient => {
     if (client === undefined || !client.connected) throw new Error('relay not connected')
@@ -132,8 +157,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     current = next
     // Reconnect with the new identity: fresh hello mints a new pairing code,
     // and every previously bound session token no longer resolves.
-    startClient()
+    await reconfigure(relayUrl)
     return { deviceId: next.deviceId }
+  }
+
+  const setRelayUrl = async (url: string): Promise<{ ok: boolean }> => {
+    await scope.update({ relayUrl: url })
+    await reconfigure(url === '' ? undefined : url)
+    return { ok: true }
   }
 
   new RemoteControlGateway(ctx, {
@@ -160,6 +191,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         return { ok: false, message: error instanceof Error ? error.message : String(error) }
       }
     },
+    setRelayUrl,
   })
 
   ctx.effect(() => () => {

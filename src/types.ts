@@ -4,6 +4,8 @@ import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 export interface PairingSnapshot {
   /** Relay connection state; `error` carries a message in `error`. */
   status: 'connecting' | 'pairing' | 'error'
+  /** Effective outbound relay URL, or absent when the embedded local relay is used. */
+  relayUrl?: string
   /** Current 6-digit pairing code, when the relay has issued one. */
   code?: string
   /** Code expiry epoch ms, when a code is live. */
@@ -35,4 +37,9 @@ export interface ResetIdentitySnapshot {
 export interface TestConnectionSnapshot {
   readonly ok: boolean
   readonly message: string
+}
+
+/** Result of updating the live relay address from the pairing panel. */
+export interface SetRelayUrlSnapshot {
+  readonly ok: boolean
 }

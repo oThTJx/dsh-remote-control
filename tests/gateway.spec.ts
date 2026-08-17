@@ -14,6 +14,7 @@ function deps(overrides?: Partial<RemoteControlGatewayDeps>): RemoteControlGatew
     revoke: async () => ({ revoked: true }),
     resetIdentity: async () => ({ deviceId: 'fresh-id' }),
     testConnection: async () => ({ ok: true, message: 'relay reachable' }),
+    setRelayUrl: async () => ({ ok: true }),
     ...overrides,
   }
 }
@@ -49,5 +50,11 @@ describe('RemoteControlGateway', () => {
       testConnection: async () => ({ ok: false, message: 'relay not connected' }),
     }))
     expect(await gateway.testConnection()).toEqual({ ok: false, message: 'relay not connected' })
+  })
+
+  it('passes the relay address update through the deps', async () => {
+    const ctx = new Context()
+    const gateway = new RemoteControlGateway(ctx, deps())
+    expect(await gateway.setRelayUrl('wss://relay.example.com')).toEqual({ ok: true })
   })
 })

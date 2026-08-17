@@ -10,13 +10,14 @@ export interface Identity {
   deviceSecret: string
 }
 
-/** Settings namespace holding the auto-generated identity. */
+/** Settings namespace holding the auto-generated identity and the live relay address. */
 export const IDENTITY_NS = settingsNamespace('remote-control')
 
 /** Identity namespace schema; the secret is redacted on every wire surface. */
 export const IDENTITY_SCHEMA = z.object({
   deviceId: z.string(),
   deviceSecret: z.string().role('secret'),
+  relayUrl: z.string(),
 })
 
 /** Generate a fresh random identity: dashless uuid + 256-bit hex secret. */
@@ -57,7 +58,14 @@ export function resolveIdentity(ctx: Context, config: Config) {
   return { identity, scope }
 }
 
+/** The persisted connection section: identity plus the live relay address ('' = embedded relay). */
+export interface ConnectionSettings {
+  deviceId: string
+  deviceSecret: string
+  relayUrl?: string
+}
+
 /** Register the identity namespace on the calling plugin's fiber. */
-export function registerIdentityScope(ctx: Context): SettingsScope<{ deviceId: string; deviceSecret: string }> {
+export function registerIdentityScope(ctx: Context): SettingsScope<ConnectionSettings> {
   return ctx.settings.register(IDENTITY_NS, IDENTITY_SCHEMA)
 }

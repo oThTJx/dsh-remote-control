@@ -26,7 +26,7 @@ Production just configures the relay:
 
 | Key | Type | Meaning |
 |---|---|---|
-| `relayUrl` | string | Public relay WSS URL, e.g. `wss://relay.example.com`; absent starts an embedded local relay on `port`. |
+| `relayUrl` | string | Public relay WSS URL, e.g. `wss://relay.example.com`; absent starts an embedded local relay on `port`. Also editable live from the pairing panel (设置 → 插件 → 远程控制); the panel-persisted value wins over cordis.yml, and an empty value selects the embedded relay. |
 | `deviceId` | string | Stable device id; auto-generated and persisted when absent. |
 | `deviceSecret` | string | Long-lived secret; auto-generated and persisted when absent. |
 | `port` | number | Embedded local relay port; defaults to 8787. |
