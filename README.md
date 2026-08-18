@@ -1,5 +1,7 @@
 # @firefly0621/dsh-remote-control
 
+English | [中文](README.zh.md)
+
 Host plugin for the remote-control capability: opens an **outbound** WebSocket connection to a relay server and serves plugin-inventory and settings commands to a paired mobile app. The dsh host needs no public IP and no inbound ports — it dials out, exactly like the OpenClaw/Claw mobile-control pattern.
 
 ## Install as a profile plugin
