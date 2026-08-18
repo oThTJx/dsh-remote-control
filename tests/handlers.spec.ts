@@ -104,7 +104,7 @@ describe('remote handler', () => {
     const withServices = createHandler({
       ...services(),
       sessions: { list: async () => ({ sessions: [] }), create: async () => ({ sessionId: 's' }), delete: async () => ({ deleted: true }) },
-      chat: { history: async () => ({ messages: [] }), send: async () => ({ accepted: true }) },
+      chat: { history: async () => ({ messages: [] }), stats: async () => ({ stats: null }), send: async () => ({ accepted: true }) },
     })
     await expect(withServices('chat.send', { text: '  ' })).rejects.toMatchObject({ code: 'payload.invalid' })
     await expect(withServices('chat.send', { text: 'hi', sessionId: 7 })).rejects.toMatchObject({ code: 'payload.invalid' })
