@@ -39,7 +39,8 @@ Production just configures the relay:
   - `plugin.list` → current non-group Loader entries (id, module, enabled, fiber phase).
   - `settings.describe` → every registered settings namespace via `ctx.settings.describe({ redactSecrets: true })` — secret fields never leave the host.
   - `settings.mutate` → path-level edits with optimistic concurrency (`ctx.settings.mutate(ns, ops, expectedRevision)`), persisted by the settings provider.
-  - `chat.send` → submits one message to the most recent active session; the assistant reply streams back to the app as `event` pushes (`chat/start` / `chat/chunk` / `chat/done` / `chat/error`).
+  - `chat.sessions` → the sessions a phone can chat with (those with a live agent), most recent first.
+  - `chat.send` → submits one message to a chosen `sessionId` (or the most recent active session when absent); the assistant reply streams back to the app as `event` pushes (`chat/start` / `chat/chunk` / `chat/done` / `chat/error`).
 - Device-originated relay commands: `sessions.list` / `sessions.revoke` power the GUI's bound-device list and removal; `resetIdentity` regenerates the identity and reconnects, orphaning every bound session.
 - Connection management: 30s heartbeats, exponential-backoff reconnect (1s → 60s cap with jitter), full teardown on fiber disposal.
 

@@ -25,7 +25,12 @@ export interface HandlerServices {
   loader: { entries(): Iterable<LoaderEntryLike> }
   settings: Pick<SettingsProvider, 'describe' | 'mutate'>
   /** Optional chat: submit one message to a session; the reply streams via `event` pushes. */
-  chat?: { send(text: string): Promise<{ accepted: boolean }> }
+  chat?: {
+    /** List the sessions a phone can chat with (those with a live agent). */
+    sessions(): Promise<{ sessions: Array<{ sessionId: string; seq: number }> }>
+    /** Submit one message; an absent sessionId picks the most recent active session. */
+    send(text: string, sessionId?: string): Promise<{ accepted: boolean }>
+  }
 }
 
 /** Stable machine-readable handler errors. */
@@ -55,11 +60,16 @@ export function createHandler(services: HandlerServices): (method: string, param
         await services.settings.mutate(settingsNamespace(ns), ops, expectedRevision)
         return { ok: true }
       }
+      case 'chat.sessions': {
+        if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')
+        return services.chat.sessions()
+      }
       case 'chat.send': {
         if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')
-        const { text } = params as { text?: unknown }
+        const { text, sessionId } = params as { text?: unknown; sessionId?: unknown }
         if (typeof text !== 'string' || text.trim() === '') throw new HandlerError('payload.invalid', 'text must be a non-empty string')
-        return services.chat.send(text)
+        if (sessionId !== undefined && typeof sessionId !== 'string') throw new HandlerError('payload.invalid', 'sessionId must be a string')
+        return services.chat.send(text, sessionId)
       }
       default:
         throw new HandlerError('method.not-found', `unknown remote method: ${method}`)

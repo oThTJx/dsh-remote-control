@@ -151,8 +151,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     client?.send({ type: 'event', payload: { event, payload } })
   }
 
-  /** Submit one message to the most recent active session; the reply streams via `event` pushes. */
-  const chatSend = async (text: string): Promise<{ accepted: boolean }> => {
+  /** Sessions the phone can chat with: those with a live agent, most recent first. */
+  const chatSessions = async (): Promise<{ sessions: Array<{ sessionId: string; seq: number }> }> => {
+    const agents = ctx.get('agents')
+    if (agents === undefined) return { sessions: [] }
+    return {
+      sessions: agents.list()
+        .map(agent => ({ sessionId: agent.session.id, seq: agent.session.seq }))
+        .sort((a, b) => b.seq - a.seq),
+    }
+  }
+
+  /** Submit one message to a chosen session (or the most recent active one); the reply streams via `event` pushes. */
+  const chatSend = async (text: string, sessionId?: string): Promise<{ accepted: boolean }> => {
     requireClient()
     if (chat !== undefined) throw new HandlerError('chat.busy', 'a chat is already streaming; wait for it to finish')
     // The agent registry is optional: chat is unavailable without it, while
@@ -160,9 +171,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const agents = ctx.get('agents')
     if (agents === undefined) throw new HandlerError('chat.unavailable', 'no agent loop on this host')
     const live = agents.list()
-    if (live.length === 0) throw new HandlerError('no-session', 'no active session on this host')
-    const target = [...live].sort((a, b) => b.session.seq - a.session.seq)[0]
-    if (target === undefined) throw new HandlerError('no-session', 'no active session on this host')
+    const target = sessionId === undefined
+      ? [...live].sort((a, b) => b.session.seq - a.session.seq)[0]
+      : live.find(agent => agent.session.id === sessionId)
+    if (target === undefined) {
+      throw new HandlerError('no-session', sessionId === undefined ? 'no active session on this host' : `no active session: ${sessionId}`)
+    }
     target.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
     chat = { sessionId: target.session.id, buffer: '' }
     emitEvent('chat/start', { sessionId: target.session.id })
@@ -188,7 +202,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const handler = createHandler({
     loader: ctx.loader,
     settings: ctx.settings,
-    chat: { send: chatSend },
+    chat: { sessions: chatSessions, send: chatSend },
   })
 
   const resetIdentity = async (): Promise<{ deviceId: string }> => {

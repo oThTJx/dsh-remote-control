@@ -50,20 +50,40 @@ describe('remote handler', () => {
   })
 
   it('dispatches chat.send through the optional chat service', async () => {
-    const sent: string[] = []
+    const sent: Array<{ text: string; sessionId: string | undefined }> = []
     const handler = createHandler({
       ...services(),
-      chat: { send: async (text) => { sent.push(text); return { accepted: true } } },
+      chat: {
+        sessions: async () => ({ sessions: [] }),
+        send: async (text, sessionId) => { sent.push({ text, sessionId }); return { accepted: true } },
+      },
     })
-    const result = await handler('chat.send', { text: '你好' }) as { accepted: boolean }
+    const result = await handler('chat.send', { text: '你好', sessionId: 's-1' }) as { accepted: boolean }
     expect(result.accepted).toBe(true)
-    expect(sent).toEqual(['你好'])
+    expect(sent).toEqual([{ text: '你好', sessionId: 's-1' }])
+  })
+
+  it('lists chat sessions through the optional chat service', async () => {
+    const handler = createHandler({
+      ...services(),
+      chat: {
+        sessions: async () => ({ sessions: [{ sessionId: 's-1', seq: 42 }] }),
+        send: async () => ({ accepted: true }),
+      },
+    })
+    const result = await handler('chat.sessions', {}) as { sessions: Array<{ sessionId: string; seq: number }> }
+    expect(result.sessions).toEqual([{ sessionId: 's-1', seq: 42 }])
   })
 
   it('rejects chat.send without text or when chat is unavailable', async () => {
     const withoutChat = createHandler(services())
     await expect(withoutChat('chat.send', { text: 'hi' })).rejects.toMatchObject({ code: 'chat.unavailable' })
-    const withChat = createHandler({ ...services(), chat: { send: async () => ({ accepted: true }) } })
+    await expect(withoutChat('chat.sessions', {})).rejects.toMatchObject({ code: 'chat.unavailable' })
+    const withChat = createHandler({
+      ...services(),
+      chat: { sessions: async () => ({ sessions: [] }), send: async () => ({ accepted: true }) },
+    })
     await expect(withChat('chat.send', { text: '  ' })).rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(withChat('chat.send', { text: 'hi', sessionId: 7 })).rejects.toMatchObject({ code: 'payload.invalid' })
   })
 })
