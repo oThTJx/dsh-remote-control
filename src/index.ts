@@ -6,8 +6,10 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentHandle, Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import { inspectApiRemoteSession } from '@deepseek-ai/dsh-api-remotes'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 import { RelayClient } from './relay-client.ts'
@@ -155,22 +157,26 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     client?.send({ type: 'event', payload: { event, payload } })
   }
 
-  /** Sessions the phone can chat with: those with a live agent, most recent first. */
+  /** Sessions the phone can chat with: live-agent sessions first, then persisted cold ones. */
   const sessionsList = async (): Promise<{ sessions: SessionSummary[] }> => {
     const agents = ctx.get('agents')
-    if (agents === undefined) return { sessions: [] }
     const titles = ctx.get('sessionTitle')
-    return {
-      sessions: agents.list()
-        .map(agent => ({
-          sessionId: agent.session.id,
-          // The session-title service (LLM or fallback) owns titles when mounted;
-          // otherwise fall back to the first user message.
-          title: titles?.get(agent.session)?.title ?? titleOf(agent.session),
-          seq: agent.session.seq,
-        }))
-        .sort((a, b) => b.seq - a.seq),
+    const sessions: SessionSummary[] = (agents?.list() ?? []).map(agent => ({
+      sessionId: agent.session.id,
+      // The session-title service (LLM or fallback) owns titles when mounted;
+      // otherwise fall back to the first user message.
+      title: titles?.get(agent.session)?.title ?? titleOf(agent.session),
+      seq: agent.session.seq,
+    }))
+    const persistence = ctx.get('sessionPersistence')
+    if (persistence !== undefined) {
+      const attached = new Set(sessions.map(session => session.sessionId))
+      for (const meta of await persistence.list()) {
+        if (attached.has(meta.id) || meta.cwd === undefined) continue
+        sessions.push({ sessionId: meta.id, title: `冷会话 ${meta.id.slice(0, 8)}…`, seq: 0 })
+      }
     }
+    return { sessions: sessions.sort((a, b) => b.seq - a.seq) }
   }
 
   /** Handles of sessions this plugin created, so the phone can delete them. */
@@ -203,20 +209,56 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return { deleted: true }
   }
 
+  /** Resume a persisted cold session under its stored preset, mirroring the web host. */
+  const resumeAgent = async (sessionId: SessionId): Promise<Agent> => {
+    const agents = ctx.get('agents')
+    if (agents === undefined) throw new HandlerError('chat.unavailable', 'no agent loop on this host')
+    let inspected: { meta: SessionHeader; events: readonly import('@deepseek-ai/dsh-session').SessionEvent[] }
+    try {
+      inspected = await inspectApiRemoteSession(ctx, sessionId)
+    } catch {
+      throw new HandlerError('no-session', `no session: ${sessionId}`)
+    }
+    const presets = ctx.get('agentPresets')
+    const defaults = ctx.get('agentDefaultModel')
+    const setup = presets === undefined
+      ? undefined
+      : async (agentCtx: Context) => {
+        // The stored preset decides the tool schemas the resumed history ran
+        // under; rebuilding with anything else replays calls the model cannot make.
+        const preset = resolveSessionPreset({ header: inspected.meta, events: inspected.events })
+        if (preset === undefined) return
+        await presets.mount(agentCtx, preset)
+      }
+    const handle = await agents.resume({
+      resumeSessionId: sessionId,
+      ...(defaults === undefined ? {} : { agentOptions: defaults.currentSelection() }),
+      ...(setup === undefined ? {} : { setup }),
+    })
+    return handle.agent
+  }
+
+  /** The attached session for a live agent, or undefined. */
+  const attachedSession = (sessionId: string): Session | undefined => {
+    const agents = ctx.get('agents')
+    const sessions = ctx.get('sessions')
+    return agents?.list().find(agent => agent.session.id === sessionId)?.session
+      ?? sessions?.get(sessionId as SessionId)
+  }
+
   /** Submit one message to a chosen session (or the most recent active one); the reply streams via `event` pushes. */
   const chatSend = async (text: string, sessionId?: string): Promise<{ accepted: boolean }> => {
     requireClient()
     if (chat !== undefined) throw new HandlerError('chat.busy', 'a chat is already streaming; wait for it to finish')
-    // The agent registry is optional: chat is unavailable without it, while
-    // inventory/settings/pairing keep working on hosts without an agent loop.
     const agents = ctx.get('agents')
     if (agents === undefined) throw new HandlerError('chat.unavailable', 'no agent loop on this host')
     const live = agents.list()
-    const target = sessionId === undefined
+    const liveTarget = sessionId === undefined
       ? [...live].sort((a, b) => b.session.seq - a.session.seq)[0]
       : live.find(agent => agent.session.id === sessionId)
+    const target = liveTarget ?? (sessionId === undefined ? undefined : await resumeAgent(sessionId as SessionId))
     if (target === undefined) {
-      throw new HandlerError('no-session', sessionId === undefined ? 'no active session on this host' : `no active session: ${sessionId}`)
+      throw new HandlerError('no-session', sessionId === undefined ? 'no active session on this host' : `no session: ${sessionId}`)
     }
     target.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
     chat = { sessionId: target.session.id, buffer: '' }
@@ -224,23 +266,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return { accepted: true }
   }
 
-  /** The projected conversation history of one attached session. */
+  /** The projected conversation history of one session (live or persisted cold). */
   const chatHistory = async (sessionId: string): Promise<{ messages: ChatMessage[] }> => {
-    const agents = ctx.get('agents')
-    const sessions = ctx.get('sessions')
-    const session = agents?.list().find(agent => agent.session.id === sessionId)?.session
-      ?? sessions?.get(sessionId as SessionId)
-    if (session === undefined) throw new HandlerError('no-session', `no session: ${sessionId}`)
-    return { messages: projectHistory(session.events) }
+    const attached = attachedSession(sessionId)
+    if (attached !== undefined) return { messages: projectHistory(attached.events) }
+    try {
+      const inspected = await inspectApiRemoteSession(ctx, sessionId as SessionId)
+      return { messages: projectHistory(inspected.events) }
+    } catch {
+      throw new HandlerError('no-session', `no session: ${sessionId}`)
+    }
   }
 
   /** Whole-log figures of one session from the `sessionStats` projection. */
   const chatStats = async (sessionId: string): Promise<{ stats: ChatStats | null }> => {
-    const agents = ctx.get('agents')
-    const sessions = ctx.get('sessions')
-    const session = agents?.list().find(agent => agent.session.id === sessionId)?.session
-      ?? sessions?.get(sessionId as SessionId)
-    if (session === undefined) throw new HandlerError('no-session', `no session: ${sessionId}`)
+    const session = attachedSession(sessionId)
+    if (session === undefined) return { stats: null }
     const projections = ctx.get('sessionProjections')
     const stats = projections?.snapshot(session).values.sessionStats
     return { stats: stats ?? null }

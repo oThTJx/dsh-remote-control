@@ -45,6 +45,15 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.host.json"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
       "path": "../../session/session-projection"
     },
     {

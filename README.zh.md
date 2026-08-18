@@ -39,12 +39,12 @@ dsh plugin --profile web add @firefly0621/dsh-remote-control
   - `plugin.list` → 当前非组 Loader 条目（id、module、enabled、fiber 阶段）。
   - `settings.describe` → 通过 `ctx.settings.describe({ redactSecrets: true })` 列出所有已注册 settings 命名空间——secret 字段绝不离开 host。
   - `settings.mutate` → 带乐观并发的路径级编辑（`ctx.settings.mutate(ns, ops, expectedRevision)`），由 settings provider 持久化。
-  - `sessions.list` → host 的有活跃 agent 会话列表，标题来自 session-title 服务（已挂载时用 LLM/fallback 标题，否则取首条用户消息），按活跃排序。
+  - `sessions.list` → host 的会话列表：有活跃 agent 的会话（标题来自 session-title 服务，已挂载时用 LLM/fallback 标题，否则取首条用户消息）加持久化冷会话，最近优先。
   - `sessions.create` → 在默认 workspace 与 preset 上新建会话；插件持有句柄，手机可删除。
   - `sessions.delete` → 删除插件创建的会话（web 创建的会话拒绝）。
-  - `chat.history` → 单个会话的对话投影：用户/assistant 文本 + 工具行（含截断的结果摘要与失败标记）。
-  - `chat.stats` → 单个会话的全量统计（轮次、步骤、LLM/工具/TTFT/解码耗时、输出 token），来自 `sessionStats` 投影；该单元未挂载时为 null。
-  - `chat.send` → 向指定 `sessionId`（缺省取最近活跃会话）提交一条消息；assistant 回复以 `event` 推送流式返回 App（`chat/start` / `chat/chunk` / `chat/done` / `chat/error`）。
+  - `chat.history` → 单个会话（活跃或冷）的对话投影：用户/assistant 文本 + 工具行（含截断的结果摘要与失败标记）。
+  - `chat.stats` → 单个活跃会话的全量统计（轮次、步骤、LLM/工具/TTFT/解码耗时、输出 token），来自 `sessionStats` 投影；该单元未挂载或会话为冷时为 null。
+  - `chat.send` → 向指定 `sessionId`（缺省取最近活跃会话）提交一条消息，冷会话先按存储的 preset 恢复；assistant 回复以 `event` 推送流式返回 App（`chat/start` / `chat/chunk` / `chat/done` / `chat/error`）。
   - `models.list` → 可用 provider/模型目录 + host 默认选择。
   - `models.set` → 设置某个活跃会话的模型选择（下一条消息生效）。
 - 设备发起的中继命令：`sessions.list` / `sessions.revoke` 支撑 GUI 的已绑定设备列表与移除；`resetIdentity` 重新生成身份并重连，使所有已绑定会话失效。
