@@ -48,4 +48,22 @@ describe('remote handler', () => {
     const handler = createHandler(services())
     await expect(handler('nope', {})).rejects.toMatchObject({ code: 'method.not-found' })
   })
+
+  it('dispatches chat.send through the optional chat service', async () => {
+    const sent: string[] = []
+    const handler = createHandler({
+      ...services(),
+      chat: { send: async (text) => { sent.push(text); return { accepted: true } } },
+    })
+    const result = await handler('chat.send', { text: '你好' }) as { accepted: boolean }
+    expect(result.accepted).toBe(true)
+    expect(sent).toEqual(['你好'])
+  })
+
+  it('rejects chat.send without text or when chat is unavailable', async () => {
+    const withoutChat = createHandler(services())
+    await expect(withoutChat('chat.send', { text: 'hi' })).rejects.toMatchObject({ code: 'chat.unavailable' })
+    const withChat = createHandler({ ...services(), chat: { send: async () => ({ accepted: true }) } })
+    await expect(withChat('chat.send', { text: '  ' })).rejects.toMatchObject({ code: 'payload.invalid' })
+  })
 })

@@ -24,6 +24,8 @@ function projectEntry(entry: LoaderEntryLike): { entryId: string; moduleName: st
 export interface HandlerServices {
   loader: { entries(): Iterable<LoaderEntryLike> }
   settings: Pick<SettingsProvider, 'describe' | 'mutate'>
+  /** Optional chat: submit one message to a session; the reply streams via `event` pushes. */
+  chat?: { send(text: string): Promise<{ accepted: boolean }> }
 }
 
 /** Stable machine-readable handler errors. */
@@ -52,6 +54,12 @@ export function createHandler(services: HandlerServices): (method: string, param
         const { ns, ops, expectedRevision } = params as { ns: string; ops: SettingsPathOp[]; expectedRevision?: number }
         await services.settings.mutate(settingsNamespace(ns), ops, expectedRevision)
         return { ok: true }
+      }
+      case 'chat.send': {
+        if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')
+        const { text } = params as { text?: unknown }
+        if (typeof text !== 'string' || text.trim() === '') throw new HandlerError('payload.invalid', 'text must be a non-empty string')
+        return services.chat.send(text)
       }
       default:
         throw new HandlerError('method.not-found', `unknown remote method: ${method}`)

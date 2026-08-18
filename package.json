@@ -1,7 +1,7 @@
 {
   "name": "@firefly0621/dsh-remote-control",
   "description": "Host plugin: zero-config outbound relay connection with GUI pairing, inventory and settings commands",
-  "version": "0.1.0-rc.12",
+  "version": "0.1.0-rc.13",
   "publishConfig": {
     "access": "public"
   },
@@ -63,7 +63,10 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
@@ -72,7 +75,10 @@
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@firefly0621/dsh-remote-relay": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-settings-file": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",

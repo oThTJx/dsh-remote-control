@@ -1,6 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Loader's Context declaration merge provides ctx.loader.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
+// The agent registry Context merge provides ctx.agents.
+import type {} from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import z from '@deepseek-ai/schemastery'
 import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 import { RelayClient } from './relay-client.ts'
@@ -38,11 +41,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   let current: Identity = identity
 
   const state: PairingSnapshot = { status: 'disconnected' }
-
-  const handler = createHandler({
-    loader: ctx.loader,
-    settings: ctx.settings,
-  })
 
   let client: RelayClient | undefined
   let relayUrl = DEFAULT_RELAY_URL
@@ -143,6 +141,52 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (client === undefined || !client.connected) throw new Error('relay not connected')
     return client
   }
+
+  /** One in-flight phone chat: its target session and the assistant text so far. */
+  let chat: { sessionId: string; buffer: string } | undefined
+
+  const emitEvent = (event: string, payload: unknown): void => {
+    client?.send({ type: 'event', payload: { event, payload } })
+  }
+
+  /** Submit one message to the most recent active session; the reply streams via `event` pushes. */
+  const chatSend = async (text: string): Promise<{ accepted: boolean }> => {
+    requireClient()
+    // The agent registry is optional: chat is unavailable without it, while
+    // inventory/settings/pairing keep working on hosts without an agent loop.
+    const agents = ctx.get('agents')
+    if (agents === undefined) throw new HandlerError('chat.unavailable', 'no agent loop on this host')
+    const live = agents.list()
+    if (live.length === 0) throw new HandlerError('no-session', 'no active session on this host')
+    const target = [...live].sort((a, b) => b.session.seq - a.session.seq)[0]
+    if (target === undefined) throw new HandlerError('no-session', 'no active session on this host')
+    target.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
+    chat = { sessionId: target.session.id, buffer: '' }
+    emitEvent('chat/start', { sessionId: target.session.id })
+    return { accepted: true }
+  }
+
+  // Forward the target session's assistant stream to the paired app: text
+  // deltas as chat/chunk, the terminal turn as chat/done or chat/error.
+  ctx.on('session/event', (session, event) => {
+    if (chat === undefined || session.id !== chat.sessionId) return
+    if (event.type === 'assistant/chunk') {
+      if (event.data.chunk.type === 'text-delta') {
+        chat.buffer += event.data.chunk.text
+        emitEvent('chat/chunk', { text: event.data.chunk.text })
+      }
+    } else if (event.type === 'turn/end') {
+      if (event.data.reason.kind === 'completed') emitEvent('chat/done', { text: chat.buffer })
+      else emitEvent('chat/error', { code: 'turn-not-completed', message: event.data.reason.kind })
+      chat = undefined
+    }
+  })
+
+  const handler = createHandler({
+    loader: ctx.loader,
+    settings: ctx.settings,
+    chat: { send: chatSend },
+  })
 
   const resetIdentity = async (): Promise<{ deviceId: string }> => {
     const next = generateIdentity()
