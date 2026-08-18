@@ -11,3 +11,7 @@
 - insert:
     - id: remote-control
       name: '@firefly0621/dsh-remote-control'
+    # The browser half is its own dsh.client row; without it the pairing tab
+    # never enters window.__DSH_BOOT__ even though the package is installed.
+    - id: ui-remote-control
+      name: '@firefly0621/dsh-client-ui-remote-control'
