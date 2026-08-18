@@ -1,13 +1,16 @@
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Loader's Context declaration merge provides ctx.loader.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 // The agent registry Context merge provides ctx.agents.
 import type {} from '@deepseek-ai/dsh-agent'
+import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { SessionId, SessionEvent } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 import { RelayClient } from './relay-client.ts'
-import { createHandler, HandlerError } from './handlers.ts'
+import { createHandler, HandlerError, type ChatMessage, type SessionSummary } from './handlers.ts'
 import { resolveIdentity, generateIdentity, type Identity } from './identity.ts'
 import { RemoteControlGateway } from './gateway.ts'
 import type { PairingSnapshot } from './pairing-state.ts'
@@ -34,6 +37,41 @@ export const Config: z<Config> = z.object({
   deviceId: z.string(),
   deviceSecret: z.string().role('secret'),
 })
+
+/** Text content of one message's content blocks. */
+function textOf(content: readonly { type: string; text?: string }[]): string {
+  return content.map(part => part.type === 'text' ? (part.text ?? '') : '').join('')
+}
+
+/** A session's title: the first user message truncated, or a placeholder. */
+function titleOf(session: { events: readonly SessionEvent[] }): string {
+  const first = session.events.find(event => event.type === 'user/message')
+  const text = first === undefined ? '' : textOf(first.data.content).trim()
+  return text === '' ? '新会话' : text.slice(0, 30)
+}
+
+/** Project a session log into wire-safe chat messages (user/assistant text plus tool rows). */
+function projectHistory(events: readonly SessionEvent[]): ChatMessage[] {
+  const messages: ChatMessage[] = []
+  for (const event of events) {
+    if (event.type === 'user/message') {
+      messages.push({ role: 'user', text: textOf(event.data.content) })
+    } else if (event.type === 'assistant/message') {
+      messages.push({ role: 'assistant', text: textOf(event.data.message.content) })
+    } else if (event.type === 'tool/call') {
+      messages.push({ role: 'tool', name: event.data.name })
+    } else if (event.type === 'tool/result') {
+      const last = messages[messages.length - 1]
+      if (last !== undefined && last.role === 'tool') {
+        const error = event.data.error ?? (event.data.message as { error?: unknown }).error
+        if (error !== undefined) last.error = typeof error === 'object' && error !== null
+          ? String((error as { code?: unknown }).code ?? 'failed')
+          : 'failed'
+      }
+    }
+  }
+  return messages
+}
 
 /** Serve remote commands over the outbound relay connection. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
@@ -152,14 +190,48 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
 
   /** Sessions the phone can chat with: those with a live agent, most recent first. */
-  const chatSessions = async (): Promise<{ sessions: Array<{ sessionId: string; seq: number }> }> => {
+  const sessionsList = async (): Promise<{ sessions: SessionSummary[] }> => {
     const agents = ctx.get('agents')
     if (agents === undefined) return { sessions: [] }
     return {
       sessions: agents.list()
-        .map(agent => ({ sessionId: agent.session.id, seq: agent.session.seq }))
+        .map(agent => ({
+          sessionId: agent.session.id,
+          title: titleOf(agent.session),
+          seq: agent.session.seq,
+        }))
         .sort((a, b) => b.seq - a.seq),
     }
+  }
+
+  /** Handles of sessions this plugin created, so the phone can delete them. */
+  const ownedSessions = new Map<SessionId, AgentHandle>()
+
+  /** Create a new session on the default workspace with the default preset. */
+  const sessionsCreate = async (): Promise<{ sessionId: string }> => {
+    const agents = ctx.get('agents')
+    if (agents === undefined) throw new HandlerError('sessions.unavailable', 'no agent loop on this host')
+    const sessionId = randomUUID() as SessionId
+    const defaults = ctx.get('agentDefaultModel')
+    const presets = ctx.get('agentPresets')
+    const handle = await agents.create({
+      sessionId,
+      ...(defaults === undefined ? {} : { agentOptions: defaults.currentSelection() }),
+      // The phone has no workspace concept yet; the harness cwd is the project root.
+      meta: { cwd: process.cwd() },
+      ...(presets === undefined ? {} : { setup: async (agentCtx: Context) => { await presets.mount(agentCtx) } }),
+    })
+    ownedSessions.set(sessionId, handle)
+    return { sessionId }
+  }
+
+  /** Delete a session this plugin created; web-created sessions are refused. */
+  const sessionsDelete = async (sessionId: string): Promise<{ deleted: boolean }> => {
+    const handle = ownedSessions.get(sessionId as SessionId)
+    if (handle === undefined) throw new HandlerError('sessions.not-owned', 'only sessions created from this phone can be deleted')
+    await handle.dispose()
+    ownedSessions.delete(sessionId as SessionId)
+    return { deleted: true }
   }
 
   /** Submit one message to a chosen session (or the most recent active one); the reply streams via `event` pushes. */
@@ -183,6 +255,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return { accepted: true }
   }
 
+  /** The projected conversation history of one attached session. */
+  const chatHistory = async (sessionId: string): Promise<{ messages: ChatMessage[] }> => {
+    const agents = ctx.get('agents')
+    const sessions = ctx.get('sessions')
+    const session = agents?.list().find(agent => agent.session.id === sessionId)?.session
+      ?? sessions?.get(sessionId as SessionId)
+    if (session === undefined) throw new HandlerError('no-session', `no session: ${sessionId}`)
+    return { messages: projectHistory(session.events) }
+  }
+
   // Forward the target session's assistant stream to the paired app: text
   // deltas as chat/chunk, the terminal turn as chat/done or chat/error.
   ctx.on('session/event', (session, event) => {
@@ -202,7 +284,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const handler = createHandler({
     loader: ctx.loader,
     settings: ctx.settings,
-    chat: { sessions: chatSessions, send: chatSend },
+    sessions: { list: sessionsList, create: sessionsCreate, delete: sessionsDelete },
+    chat: { history: chatHistory, send: chatSend },
   })
 
   const resetIdentity = async (): Promise<{ deviceId: string }> => {

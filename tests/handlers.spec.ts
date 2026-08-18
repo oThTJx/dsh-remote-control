@@ -49,41 +49,54 @@ describe('remote handler', () => {
     await expect(handler('nope', {})).rejects.toMatchObject({ code: 'method.not-found' })
   })
 
-  it('dispatches chat.send through the optional chat service', async () => {
+  it('dispatches chat.send and chat.history through the optional chat service', async () => {
     const sent: Array<{ text: string; sessionId: string | undefined }> = []
     const handler = createHandler({
       ...services(),
       chat: {
-        sessions: async () => ({ sessions: [] }),
+        history: async sessionId => ({ messages: [{ role: 'user', text: 'hi' }, { role: 'tool', name: 'bash' }] }),
         send: async (text, sessionId) => { sent.push({ text, sessionId }); return { accepted: true } },
       },
     })
     const result = await handler('chat.send', { text: '你好', sessionId: 's-1' }) as { accepted: boolean }
     expect(result.accepted).toBe(true)
     expect(sent).toEqual([{ text: '你好', sessionId: 's-1' }])
+    const history = await handler('chat.history', { sessionId: 's-1' }) as { messages: Array<{ role: string }> }
+    expect(history.messages).toEqual([{ role: 'user', text: 'hi' }, { role: 'tool', name: 'bash' }])
   })
 
-  it('lists chat sessions through the optional chat service', async () => {
+  it('dispatches sessions.list / create / delete through the optional session service', async () => {
+    const calls: string[] = []
     const handler = createHandler({
       ...services(),
-      chat: {
-        sessions: async () => ({ sessions: [{ sessionId: 's-1', seq: 42 }] }),
-        send: async () => ({ accepted: true }),
+      sessions: {
+        list: async () => ({ sessions: [{ sessionId: 's-1', title: 't', seq: 42 }] }),
+        create: async () => { calls.push('create'); return { sessionId: 's-2' } },
+        delete: async (sessionId) => { calls.push(`delete:${sessionId}`); return { deleted: true } },
       },
     })
-    const result = await handler('chat.sessions', {}) as { sessions: Array<{ sessionId: string; seq: number }> }
-    expect(result.sessions).toEqual([{ sessionId: 's-1', seq: 42 }])
+    const list = await handler('sessions.list', {}) as { sessions: Array<{ sessionId: string }> }
+    expect(list.sessions).toEqual([{ sessionId: 's-1', title: 't', seq: 42 }])
+    const created = await handler('sessions.create', {}) as { sessionId: string }
+    expect(created.sessionId).toBe('s-2')
+    const deleted = await handler('sessions.delete', { sessionId: 's-2' }) as { deleted: boolean }
+    expect(deleted.deleted).toBe(true)
+    expect(calls).toEqual(['create', 'delete:s-2'])
   })
 
-  it('rejects chat.send without text or when chat is unavailable', async () => {
-    const withoutChat = createHandler(services())
-    await expect(withoutChat('chat.send', { text: 'hi' })).rejects.toMatchObject({ code: 'chat.unavailable' })
-    await expect(withoutChat('chat.sessions', {})).rejects.toMatchObject({ code: 'chat.unavailable' })
-    const withChat = createHandler({
+  it('rejects chat and session commands with invalid payloads or when unavailable', async () => {
+    const bare = createHandler(services())
+    await expect(bare('chat.send', { text: 'hi' })).rejects.toMatchObject({ code: 'chat.unavailable' })
+    await expect(bare('chat.history', { sessionId: 's' })).rejects.toMatchObject({ code: 'chat.unavailable' })
+    await expect(bare('sessions.list', {})).rejects.toMatchObject({ code: 'sessions.unavailable' })
+    const withServices = createHandler({
       ...services(),
-      chat: { sessions: async () => ({ sessions: [] }), send: async () => ({ accepted: true }) },
+      sessions: { list: async () => ({ sessions: [] }), create: async () => ({ sessionId: 's' }), delete: async () => ({ deleted: true }) },
+      chat: { history: async () => ({ messages: [] }), send: async () => ({ accepted: true }) },
     })
-    await expect(withChat('chat.send', { text: '  ' })).rejects.toMatchObject({ code: 'payload.invalid' })
-    await expect(withChat('chat.send', { text: 'hi', sessionId: 7 })).rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(withServices('chat.send', { text: '  ' })).rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(withServices('chat.send', { text: 'hi', sessionId: 7 })).rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(withServices('chat.history', {})).rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(withServices('sessions.delete', {})).rejects.toMatchObject({ code: 'payload.invalid' })
   })
 })

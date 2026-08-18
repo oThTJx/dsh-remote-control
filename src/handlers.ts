@@ -20,14 +20,37 @@ function projectEntry(entry: LoaderEntryLike): { entryId: string; moduleName: st
   }
 }
 
+/** One host session as surfaced to the phone. */
+export interface SessionSummary {
+  sessionId: string
+  /** First user message text (truncated), or a placeholder for blank sessions. */
+  title: string
+  /** Durable event count; higher means more recent activity. */
+  seq: number
+}
+
+/** One projected conversation entry; tool calls surface as compact rows. */
+export type ChatMessage =
+  | { role: 'user' | 'assistant'; text: string }
+  | { role: 'tool'; name: string; error?: string }
+
 /** Services the command handler needs, narrowed to what it reads. */
 export interface HandlerServices {
   loader: { entries(): Iterable<LoaderEntryLike> }
   settings: Pick<SettingsProvider, 'describe' | 'mutate'>
+  /** Optional session management over the host's agent registry. */
+  sessions?: {
+    /** The sessions a phone can chat with (those with a live agent), most recent first. */
+    list(): Promise<{ sessions: SessionSummary[] }>
+    /** Create a new session; the plugin owns the handle so the phone can delete it later. */
+    create(): Promise<{ sessionId: string }>
+    /** Delete a session the plugin created; web-created sessions are refused. */
+    delete(sessionId: string): Promise<{ deleted: boolean }>
+  }
   /** Optional chat: submit one message to a session; the reply streams via `event` pushes. */
   chat?: {
-    /** List the sessions a phone can chat with (those with a live agent). */
-    sessions(): Promise<{ sessions: Array<{ sessionId: string; seq: number }> }>
+    /** The projected conversation history of one session. */
+    history(sessionId: string): Promise<{ messages: ChatMessage[] }>
     /** Submit one message; an absent sessionId picks the most recent active session. */
     send(text: string, sessionId?: string): Promise<{ accepted: boolean }>
   }
@@ -60,9 +83,25 @@ export function createHandler(services: HandlerServices): (method: string, param
         await services.settings.mutate(settingsNamespace(ns), ops, expectedRevision)
         return { ok: true }
       }
-      case 'chat.sessions': {
+      case 'sessions.list': {
+        if (services.sessions === undefined) throw new HandlerError('sessions.unavailable', 'session management is not available in this deployment')
+        return services.sessions.list()
+      }
+      case 'sessions.create': {
+        if (services.sessions === undefined) throw new HandlerError('sessions.unavailable', 'session management is not available in this deployment')
+        return services.sessions.create()
+      }
+      case 'sessions.delete': {
+        if (services.sessions === undefined) throw new HandlerError('sessions.unavailable', 'session management is not available in this deployment')
+        const { sessionId } = params as { sessionId?: unknown }
+        if (typeof sessionId !== 'string' || sessionId.length === 0) throw new HandlerError('payload.invalid', 'sessionId must be a string')
+        return services.sessions.delete(sessionId)
+      }
+      case 'chat.history': {
         if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')
-        return services.chat.sessions()
+        const { sessionId } = params as { sessionId?: unknown }
+        if (typeof sessionId !== 'string' || sessionId.length === 0) throw new HandlerError('payload.invalid', 'sessionId must be a string')
+        return services.chat.history(sessionId)
       }
       case 'chat.send': {
         if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')
