@@ -44,6 +44,8 @@ Production just configures the relay:
   - `sessions.delete` → deletes a session the plugin created (web-created sessions are refused).
   - `chat.history` → the projected conversation of one session: user/assistant text plus tool rows (name, failure).
   - `chat.send` → submits one message to a chosen `sessionId` (or the most recent active session when absent); the assistant reply streams back to the app as `event` pushes (`chat/start` / `chat/chunk` / `chat/done` / `chat/error`).
+  - `models.list` → the available provider/model catalog plus the host default selection.
+  - `models.set` → sets the model selection of one live session (takes effect from the next message).
 - Device-originated relay commands: `sessions.list` / `sessions.revoke` power the GUI's bound-device list and removal; `resetIdentity` regenerates the identity and reconnects, orphaning every bound session.
 - Connection management: 30s heartbeats, exponential-backoff reconnect (1s → 60s cap with jitter), full teardown on fiber disposal.
 

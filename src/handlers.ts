@@ -54,6 +54,13 @@ export interface HandlerServices {
     /** Submit one message; an absent sessionId picks the most recent active session. */
     send(text: string, sessionId?: string): Promise<{ accepted: boolean }>
   }
+  /** Optional model catalog and per-session selection. */
+  models?: {
+    /** The available provider/model catalog, plus the host default selection. */
+    list(): Promise<{ groups: Array<{ provider: string; models: string[] }>; current?: { provider: string; model: string } }>
+    /** Set the model selection of one live session. */
+    set(sessionId: string, provider: string, model: string): Promise<{ ok: boolean }>
+  }
 }
 
 /** Stable machine-readable handler errors. */
@@ -109,6 +116,18 @@ export function createHandler(services: HandlerServices): (method: string, param
         if (typeof text !== 'string' || text.trim() === '') throw new HandlerError('payload.invalid', 'text must be a non-empty string')
         if (sessionId !== undefined && typeof sessionId !== 'string') throw new HandlerError('payload.invalid', 'sessionId must be a string')
         return services.chat.send(text, sessionId)
+      }
+      case 'models.list': {
+        if (services.models === undefined) throw new HandlerError('models.unavailable', 'model selection is not available in this deployment')
+        return services.models.list()
+      }
+      case 'models.set': {
+        if (services.models === undefined) throw new HandlerError('models.unavailable', 'model selection is not available in this deployment')
+        const { sessionId, provider, model } = params as { sessionId?: unknown; provider?: unknown; model?: unknown }
+        if (typeof sessionId !== 'string' || typeof provider !== 'string' || typeof model !== 'string' || sessionId.length === 0 || provider.length === 0 || model.length === 0) {
+          throw new HandlerError('payload.invalid', 'sessionId, provider, and model must be non-empty strings')
+        }
+        return services.models.set(sessionId, provider, model)
       }
       default:
         throw new HandlerError('method.not-found', `unknown remote method: ${method}`)

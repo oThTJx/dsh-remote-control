@@ -4,7 +4,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 // The agent registry Context merge provides ctx.agents.
 import type {} from '@deepseek-ai/dsh-agent'
-import type { AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { AgentHandle, Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionEvent } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
@@ -265,6 +266,45 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return { messages: projectHistory(session.events) }
   }
 
+  /** Per-agent model selection installed by this plugin (one waterfall per agent). */
+  const modelSelections = new WeakMap<Agent, ModelSelectionRef>()
+  const selectionFor = (agent: Agent): ModelSelectionRef => {
+    let ref = modelSelections.get(agent)
+    if (ref === undefined) {
+      ref = { current: undefined, assembled: undefined }
+      installModelSelection(agent.ctx, ref)
+      modelSelections.set(agent, ref)
+    }
+    return ref
+  }
+
+  /** The available provider/model catalog, plus the host default selection. */
+  const modelsList = async (): Promise<{
+    groups: Array<{ provider: string; models: string[] }>
+    current?: { provider: string; model: string }
+  }> => {
+    const llm = ctx.get('llm')
+    if (llm === undefined) throw new HandlerError('models.unavailable', 'no LLM service on this host')
+    const groups = await Promise.all(llm.listProviders().map(async provider => ({
+      provider: provider.id,
+      models: (await llm.listModels(provider.id)).map(model => model.id),
+    })))
+    const defaults = ctx.get('agentDefaultModel')
+    return {
+      groups,
+      ...(defaults === undefined ? {} : { current: defaults.currentSelection() }),
+    }
+  }
+
+  /** Set the model selection of one live session. */
+  const modelsSet = async (sessionId: string, provider: string, model: string): Promise<{ ok: boolean }> => {
+    const agents = ctx.get('agents')
+    const agent = agents?.list().find(candidate => candidate.session.id === sessionId)
+    if (agent === undefined) throw new HandlerError('no-session', `no active session: ${sessionId}`)
+    selectionFor(agent).current = { provider, model }
+    return { ok: true }
+  }
+
   // Forward the target session's assistant stream to the paired app: text
   // deltas as chat/chunk, the terminal turn as chat/done or chat/error.
   ctx.on('session/event', (session, event) => {
@@ -286,6 +326,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     settings: ctx.settings,
     sessions: { list: sessionsList, create: sessionsCreate, delete: sessionsDelete },
     chat: { history: chatHistory, send: chatSend },
+    models: { list: modelsList, set: modelsSet },
   })
 
   const resetIdentity = async (): Promise<{ deviceId: string }> => {

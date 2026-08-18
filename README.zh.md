@@ -44,6 +44,8 @@ dsh plugin --profile web add @firefly0621/dsh-remote-control
   - `sessions.delete` → 删除插件创建的会话（web 创建的会话拒绝）。
   - `chat.history` → 单个会话的对话投影：用户/assistant 文本 + 工具行（名称、失败标记）。
   - `chat.send` → 向指定 `sessionId`（缺省取最近活跃会话）提交一条消息；assistant 回复以 `event` 推送流式返回 App（`chat/start` / `chat/chunk` / `chat/done` / `chat/error`）。
+  - `models.list` → 可用 provider/模型目录 + host 默认选择。
+  - `models.set` → 设置某个活跃会话的模型选择（下一条消息生效）。
 - 设备发起的中继命令：`sessions.list` / `sessions.revoke` 支撑 GUI 的已绑定设备列表与移除；`resetIdentity` 重新生成身份并重连，使所有已绑定会话失效。
 - 连接管理：30s 心跳、指数退避重连（1s → 60s 上限加抖动）、fiber 释放时完整拆除。
 

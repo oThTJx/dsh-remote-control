@@ -99,4 +99,22 @@ describe('remote handler', () => {
     await expect(withServices('chat.history', {})).rejects.toMatchObject({ code: 'payload.invalid' })
     await expect(withServices('sessions.delete', {})).rejects.toMatchObject({ code: 'payload.invalid' })
   })
+
+  it('dispatches models.list and models.set through the optional model service', async () => {
+    const calls: Array<{ sessionId: string; provider: string; model: string }> = []
+    const handler = createHandler({
+      ...services(),
+      models: {
+        list: async () => ({ groups: [{ provider: 'deepseek', models: ['a', 'b'] }], current: { provider: 'deepseek', model: 'a' } }),
+        set: async (sessionId, provider, model) => { calls.push({ sessionId, provider, model }); return { ok: true } },
+      },
+    })
+    const list = await handler('models.list', {}) as { groups: Array<{ provider: string; models: string[] }> }
+    expect(list.groups).toEqual([{ provider: 'deepseek', models: ['a', 'b'] }])
+    const set = await handler('models.set', { sessionId: 's', provider: 'deepseek', model: 'b' }) as { ok: boolean }
+    expect(set.ok).toBe(true)
+    expect(calls).toEqual([{ sessionId: 's', provider: 'deepseek', model: 'b' }])
+    await expect(handler('models.set', { sessionId: '', provider: 'p', model: 'm' })).rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(createHandler(services())('models.list', {})).rejects.toMatchObject({ code: 'models.unavailable' })
+  })
 })
