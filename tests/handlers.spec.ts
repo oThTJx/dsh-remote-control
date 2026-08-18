@@ -54,7 +54,7 @@ describe('remote handler', () => {
     const handler = createHandler({
       ...services(),
       chat: {
-        history: async sessionId => ({ messages: [{ role: 'user', text: 'hi' }, { role: 'tool', name: 'bash' }] }),
+        history: async () => ({ messages: [{ role: 'user', text: 'hi' }, { role: 'tool', name: 'bash' }] }),
         send: async (text, sessionId) => { sent.push({ text, sessionId }); return { accepted: true } },
       },
     })
