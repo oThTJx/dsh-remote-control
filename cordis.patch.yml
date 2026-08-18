@@ -11,7 +11,8 @@
 - insert:
     - id: remote-control
       name: '@firefly0621/dsh-remote-control'
-    # The browser half is its own dsh.client row; without it the pairing tab
-    # never enters window.__DSH_BOOT__ even though the package is installed.
+    # The browser half is this plugin's own dsh.client roster row: the web-app
+    # bundle deliberately does not declare it, so this bundle is the single
+    # source for the pairing tab on every web-app version.
     - id: ui-remote-control
       name: '@firefly0621/dsh-client-ui-remote-control'
