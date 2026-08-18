@@ -159,11 +159,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const sessionsList = async (): Promise<{ sessions: SessionSummary[] }> => {
     const agents = ctx.get('agents')
     if (agents === undefined) return { sessions: [] }
+    const titles = ctx.get('sessionTitle')
     return {
       sessions: agents.list()
         .map(agent => ({
           sessionId: agent.session.id,
-          title: titleOf(agent.session),
+          // The session-title service (LLM or fallback) owns titles when mounted;
+          // otherwise fall back to the first user message.
+          title: titles?.get(agent.session)?.title ?? titleOf(agent.session),
           seq: agent.session.seq,
         }))
         .sort((a, b) => b.seq - a.seq),

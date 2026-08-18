@@ -39,7 +39,7 @@ Production just configures the relay:
   - `plugin.list` → current non-group Loader entries (id, module, enabled, fiber phase).
   - `settings.describe` → every registered settings namespace via `ctx.settings.describe({ redactSecrets: true })` — secret fields never leave the host.
   - `settings.mutate` → path-level edits with optimistic concurrency (`ctx.settings.mutate(ns, ops, expectedRevision)`), persisted by the settings provider.
-  - `sessions.list` → the host's live-agent sessions with a title (first user message) and activity order.
+  - `sessions.list` → the host's live-agent sessions with their title (the session-title service's LLM/fallback title when mounted, else the first user message) and activity order.
   - `sessions.create` → a new session on the default workspace and preset; the plugin owns the handle so the phone can delete it.
   - `sessions.delete` → deletes a session the plugin created (web-created sessions are refused).
   - `chat.history` → the projected conversation of one session: user/assistant text plus tool rows with a truncated result summary and failure marker.
