@@ -10,7 +10,7 @@
 dsh plugin --profile web add @firefly0621/dsh-remote-control
 ```
 
-浏览器配对面板（`@firefly0621/dsh-client-ui-remote-control`）是本包的依赖，因此一次安装同时带来 host 插件与 设置 → 插件 → 远程控制 标签页。
+浏览器配对面板（`@firefly0621/dsh-client-ui-remote-control`）是本包的依赖，因此一次安装同时带来 host 插件与 设置 → 远程控制 设置页。
 
 **连接是显式的**：插件保持断开，直到你在配对面板按下**连接**；QR 码与 6 位配对码只在连接成功后出现（中继通过活动链接铸造配对码）。**断开连接**会断开并清除配对码。本地启动一个中继（`@firefly0621/dsh-remote-relay`，默认 `ws://127.0.0.1:8787`）或指向你自己的——插件默认 `ws://127.0.0.1:8787`，自动生成 `deviceId`/`deviceSecret`（持久化在 settings 命名空间 `remote-control`，密钥在所有线上表面脱敏），中继地址可在面板上实时编辑。手机扫码（或输入配对码）一次即保持配对——之后 App 用存储的 token 恢复。
 
@@ -28,13 +28,13 @@ dsh plugin --profile web add @firefly0621/dsh-remote-control
 
 | 键 | 类型 | 含义 |
 |---|---|---|
-| `relayUrl` | string | 公开中继 WSS URL，如 `wss://relay.example.com`；缺省回退到 `ws://127.0.0.1:8787`（本地运行的中继）。也可在配对面板实时编辑（设置 → 插件 → 远程控制）；面板持久化的值优先于 cordis.yml。 |
+| `relayUrl` | string | 公开中继 WSS URL，如 `wss://relay.example.com`；缺省回退到 `ws://127.0.0.1:8787`（本地运行的中继）。也可在配对面板实时编辑（设置 → 远程控制）；面板持久化的值优先于 cordis.yml。 |
 | `deviceId` | string | 稳定设备 id；缺省时自动生成并持久化。 |
 | `deviceSecret` | string | 长期 secret；缺省时自动生成并持久化。 |
 
 ## 行为
 
-- 连接是显式的：**连接**启动出站客户端，**断开连接**停止并清除配对码。连接时插件用 `hello { deviceSecret }` 认证；中继铸造 6 位配对码并通过 `pairing.issue` 回传。Web GUI 面板显示配对码及编码 `relay=<url>&code=<6位码>` 的 QR 码，另有**测试连接**按钮对中继执行一次真实线往返。连接失败以带原因的错误状态呈现。
+- 连接是显式的：中继地址输入框旁的**连接**按钮会先保存地址再启动出站客户端，**断开连接**停止并清除配对码。连接时插件用 `hello { deviceSecret }` 认证；中继铸造 6 位配对码并通过 `pairing.issue` 回传。Web GUI 面板在配对成功后显示配对码及编码 `relay=<url>&code=<6位码>` 的 QR 码（配对上后有 **刷新** 可重读状态），连接失败以带原因的错误状态呈现。
 - 线上的命令：
   - `plugin.list` → 当前非组 Loader 条目（id、module、enabled、fiber 阶段）。
   - `settings.describe` → 通过 `ctx.settings.describe({ redactSecrets: true })` 列出所有已注册 settings 命名空间——secret 字段绝不离开 host。

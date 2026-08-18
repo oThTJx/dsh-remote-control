@@ -13,6 +13,6 @@
       name: '@firefly0621/dsh-remote-control'
     # The browser half is this plugin's own dsh.client roster row: the web-app
     # bundle deliberately does not declare it, so this bundle is the single
-    # source for the pairing tab on every web-app version.
+    # source for the pairing settings section on every web-app version.
     - id: ui-remote-control
       name: '@firefly0621/dsh-client-ui-remote-control'
