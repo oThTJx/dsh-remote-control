@@ -11,7 +11,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 import { RelayClient } from './relay-client.ts'
-import { createHandler, HandlerError, projectHistory, titleOf, type ChatMessage, type SessionSummary } from './handlers.ts'
+import { createHandler, HandlerError, projectHistory, titleOf, type ChatMessage, type ChatStats, type SessionSummary } from './handlers.ts'
 import { resolveIdentity, generateIdentity, type Identity } from './identity.ts'
 import { RemoteControlGateway } from './gateway.ts'
 import type { PairingSnapshot } from './pairing-state.ts'
@@ -234,6 +234,18 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return { messages: projectHistory(session.events) }
   }
 
+  /** Whole-log figures of one session from the `sessionStats` projection. */
+  const chatStats = async (sessionId: string): Promise<{ stats: ChatStats | null }> => {
+    const agents = ctx.get('agents')
+    const sessions = ctx.get('sessions')
+    const session = agents?.list().find(agent => agent.session.id === sessionId)?.session
+      ?? sessions?.get(sessionId as SessionId)
+    if (session === undefined) throw new HandlerError('no-session', `no session: ${sessionId}`)
+    const projections = ctx.get('sessionProjections')
+    const stats = projections?.snapshot(session).values.sessionStats
+    return { stats: stats ?? null }
+  }
+
   /** Per-agent model selection installed by this plugin (one waterfall per agent). */
   const modelSelections = new WeakMap<Agent, ModelSelectionRef>()
   const selectionFor = (agent: Agent): ModelSelectionRef => {
@@ -293,7 +305,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     loader: ctx.loader,
     settings: ctx.settings,
     sessions: { list: sessionsList, create: sessionsCreate, delete: sessionsDelete },
-    chat: { history: chatHistory, send: chatSend },
+    chat: { history: chatHistory, stats: chatStats, send: chatSend },
     models: { list: modelsList, set: modelsSet },
   })
 

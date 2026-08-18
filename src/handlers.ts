@@ -35,6 +35,18 @@ export type ChatMessage =
   | { role: 'user' | 'assistant'; text: string }
   | { role: 'tool'; name: string; error?: string; result?: string }
 
+/** Whole-log session figures from the `sessionStats` projection. */
+export interface ChatStats {
+  turns: number
+  steps: number
+  llmMs: number
+  toolMs: number
+  ttftMs: number
+  ttftSteps: number
+  decodeMs: number
+  decodeTokens: number
+}
+
 /** Text content of one message's content blocks. */
 export function textOf(content: readonly { type: string; text?: string }[]): string {
   return content.map(part => part.type === 'text' ? (part.text ?? '') : '').join('')
@@ -94,6 +106,8 @@ export interface HandlerServices {
   chat?: {
     /** The projected conversation history of one session. */
     history(sessionId: string): Promise<{ messages: ChatMessage[] }>
+    /** Whole-log figures of one session; null when the stats projection is absent. */
+    stats(sessionId: string): Promise<{ stats: ChatStats | null }>
     /** Submit one message; an absent sessionId picks the most recent active session. */
     send(text: string, sessionId?: string): Promise<{ accepted: boolean }>
   }
@@ -152,6 +166,12 @@ export function createHandler(services: HandlerServices): (method: string, param
         const { sessionId } = params as { sessionId?: unknown }
         if (typeof sessionId !== 'string' || sessionId.length === 0) throw new HandlerError('payload.invalid', 'sessionId must be a string')
         return services.chat.history(sessionId)
+      }
+      case 'chat.stats': {
+        if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')
+        const { sessionId } = params as { sessionId?: unknown }
+        if (typeof sessionId !== 'string' || sessionId.length === 0) throw new HandlerError('payload.invalid', 'sessionId must be a string')
+        return services.chat.stats(sessionId)
       }
       case 'chat.send': {
         if (services.chat === undefined) throw new HandlerError('chat.unavailable', 'chat is not available in this deployment')

@@ -43,6 +43,7 @@ Production just configures the relay:
   - `sessions.create` → a new session on the default workspace and preset; the plugin owns the handle so the phone can delete it.
   - `sessions.delete` → deletes a session the plugin created (web-created sessions are refused).
   - `chat.history` → the projected conversation of one session: user/assistant text plus tool rows with a truncated result summary and failure marker.
+  - `chat.stats` → whole-log figures of one session (turns, steps, LLM/tool/ttft/decode wall times, output tokens) from the `sessionStats` projection; null when that unit is absent.
   - `chat.send` → submits one message to a chosen `sessionId` (or the most recent active session when absent); the assistant reply streams back to the app as `event` pushes (`chat/start` / `chat/chunk` / `chat/done` / `chat/error`).
   - `models.list` → the available provider/model catalog plus the host default selection.
   - `models.set` → sets the model selection of one live session (takes effect from the next message).

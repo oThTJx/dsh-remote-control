@@ -56,6 +56,7 @@ describe('remote handler', () => {
       ...services(),
       chat: {
         history: async () => ({ messages: [{ role: 'user', text: 'hi' }, { role: 'tool', name: 'bash' }] }),
+        stats: async () => ({ stats: { turns: 3, steps: 4, llmMs: 5, toolMs: 6, ttftMs: 7, ttftSteps: 8, decodeMs: 9, decodeTokens: 10 } }),
         send: async (text, sessionId) => { sent.push({ text, sessionId }); return { accepted: true } },
       },
     })
@@ -64,6 +65,16 @@ describe('remote handler', () => {
     expect(sent).toEqual([{ text: '你好', sessionId: 's-1' }])
     const history = await handler('chat.history', { sessionId: 's-1' }) as { messages: Array<{ role: string }> }
     expect(history.messages).toEqual([{ role: 'user', text: 'hi' }, { role: 'tool', name: 'bash' }])
+    const stats = await handler('chat.stats', { sessionId: 's-1' }) as { stats: { turns: number } }
+    expect(stats.stats.turns).toBe(3)
+  })
+
+  it('rejects chat.stats without a sessionId', async () => {
+    const handler = createHandler({
+      ...services(),
+      chat: { history: async () => ({ messages: [] }), stats: async () => ({ stats: null }), send: async () => ({ accepted: true }) },
+    })
+    await expect(handler('chat.stats', {})).rejects.toMatchObject({ code: 'payload.invalid' })
   })
 
   it('dispatches sessions.list / create / delete through the optional session service', async () => {
