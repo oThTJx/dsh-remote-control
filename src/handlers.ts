@@ -1,3 +1,4 @@
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { settingsNamespace, type SettingsProvider, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
 
 /** Minimal Loader entry view the handler projects. */
@@ -29,10 +30,52 @@ export interface SessionSummary {
   seq: number
 }
 
-/** One projected conversation entry; tool calls surface as compact rows. */
+/** One projected conversation entry; tool calls surface as compact rows with a result summary. */
 export type ChatMessage =
   | { role: 'user' | 'assistant'; text: string }
-  | { role: 'tool'; name: string; error?: string }
+  | { role: 'tool'; name: string; error?: string; result?: string }
+
+/** Text content of one message's content blocks. */
+export function textOf(content: readonly { type: string; text?: string }[]): string {
+  return content.map(part => part.type === 'text' ? (part.text ?? '') : '').join('')
+}
+
+/** A session's title: the first user message truncated, or a placeholder. */
+export function titleOf(session: { events: readonly SessionEvent[] }): string {
+  const first = session.events.find(event => event.type === 'user/message')
+  const text = first === undefined ? '' : textOf(first.data.content).trim()
+  return text === '' ? '新会话' : text.slice(0, 30)
+}
+
+const RESULT_SUMMARY_MAX = 200
+
+/** Project a session log into wire-safe chat messages (user/assistant text plus tool rows). */
+export function projectHistory(events: readonly SessionEvent[]): ChatMessage[] {
+  const messages: ChatMessage[] = []
+  for (const event of events) {
+    if (event.type === 'user/message') {
+      messages.push({ role: 'user', text: textOf(event.data.content) })
+    } else if (event.type === 'assistant/message') {
+      messages.push({ role: 'assistant', text: textOf(event.data.message.content) })
+    } else if (event.type === 'tool/call') {
+      messages.push({ role: 'tool', name: event.data.name })
+    } else if (event.type === 'tool/result') {
+      const last = messages[messages.length - 1]
+      if (last !== undefined && last.role === 'tool') {
+        const error = event.data.error ?? (event.data.message as { error?: unknown }).error
+        if (error !== undefined) {
+          last.error = typeof error === 'object' && error !== null
+            ? String((error as { code?: unknown }).code ?? 'failed')
+            : 'failed'
+        } else {
+          const text = textOf(event.data.message.content).trim()
+          if (text !== '') last.result = text.length > RESULT_SUMMARY_MAX ? `${text.slice(0, RESULT_SUMMARY_MAX)}…` : text
+        }
+      }
+    }
+  }
+  return messages
+}
 
 /** Services the command handler needs, narrowed to what it reads. */
 export interface HandlerServices {

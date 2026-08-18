@@ -7,11 +7,11 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentHandle, Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionId, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import type { SessionInfo } from '@firefly0621/dsh-remote-protocol'
 import { RelayClient } from './relay-client.ts'
-import { createHandler, HandlerError, type ChatMessage, type SessionSummary } from './handlers.ts'
+import { createHandler, HandlerError, projectHistory, titleOf, type ChatMessage, type SessionSummary } from './handlers.ts'
 import { resolveIdentity, generateIdentity, type Identity } from './identity.ts'
 import { RemoteControlGateway } from './gateway.ts'
 import type { PairingSnapshot } from './pairing-state.ts'
@@ -38,41 +38,6 @@ export const Config: z<Config> = z.object({
   deviceId: z.string(),
   deviceSecret: z.string().role('secret'),
 })
-
-/** Text content of one message's content blocks. */
-function textOf(content: readonly { type: string; text?: string }[]): string {
-  return content.map(part => part.type === 'text' ? (part.text ?? '') : '').join('')
-}
-
-/** A session's title: the first user message truncated, or a placeholder. */
-function titleOf(session: { events: readonly SessionEvent[] }): string {
-  const first = session.events.find(event => event.type === 'user/message')
-  const text = first === undefined ? '' : textOf(first.data.content).trim()
-  return text === '' ? '新会话' : text.slice(0, 30)
-}
-
-/** Project a session log into wire-safe chat messages (user/assistant text plus tool rows). */
-function projectHistory(events: readonly SessionEvent[]): ChatMessage[] {
-  const messages: ChatMessage[] = []
-  for (const event of events) {
-    if (event.type === 'user/message') {
-      messages.push({ role: 'user', text: textOf(event.data.content) })
-    } else if (event.type === 'assistant/message') {
-      messages.push({ role: 'assistant', text: textOf(event.data.message.content) })
-    } else if (event.type === 'tool/call') {
-      messages.push({ role: 'tool', name: event.data.name })
-    } else if (event.type === 'tool/result') {
-      const last = messages[messages.length - 1]
-      if (last !== undefined && last.role === 'tool') {
-        const error = event.data.error ?? (event.data.message as { error?: unknown }).error
-        if (error !== undefined) last.error = typeof error === 'object' && error !== null
-          ? String((error as { code?: unknown }).code ?? 'failed')
-          : 'failed'
-      }
-    }
-  }
-  return messages
-}
 
 /** Serve remote commands over the outbound relay connection. */
 export async function apply(ctx: Context, config: Config): Promise<void> {

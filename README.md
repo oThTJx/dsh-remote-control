@@ -42,7 +42,7 @@ Production just configures the relay:
   - `sessions.list` → the host's live-agent sessions with a title (first user message) and activity order.
   - `sessions.create` → a new session on the default workspace and preset; the plugin owns the handle so the phone can delete it.
   - `sessions.delete` → deletes a session the plugin created (web-created sessions are refused).
-  - `chat.history` → the projected conversation of one session: user/assistant text plus tool rows (name, failure).
+  - `chat.history` → the projected conversation of one session: user/assistant text plus tool rows with a truncated result summary and failure marker.
   - `chat.send` → submits one message to a chosen `sessionId` (or the most recent active session when absent); the assistant reply streams back to the app as `event` pushes (`chat/start` / `chat/chunk` / `chat/done` / `chat/error`).
   - `models.list` → the available provider/model catalog plus the host default selection.
   - `models.set` → sets the model selection of one live session (takes effect from the next message).

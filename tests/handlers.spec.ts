@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createHandler, type HandlerServices } from '../src/handlers.ts'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { createHandler, projectHistory, type HandlerServices } from '../src/handlers.ts'
 
 const entry = {
   id: 'plugin-inventory',
@@ -116,5 +117,32 @@ describe('remote handler', () => {
     expect(calls).toEqual([{ sessionId: 's', provider: 'deepseek', model: 'b' }])
     await expect(handler('models.set', { sessionId: '', provider: 'p', model: 'm' })).rejects.toMatchObject({ code: 'payload.invalid' })
     await expect(createHandler(services())('models.list', {})).rejects.toMatchObject({ code: 'models.unavailable' })
+  })
+
+  it('projects history with tool result summaries', () => {
+    const events = [
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'hi' }] } },
+      { type: 'tool/call', data: { name: 'bash', callId: 'c1', turn: 1, step: 1, arguments: '{}' } },
+      { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'out' }] } } },
+      { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'done' }] } } },
+    ] as unknown as readonly SessionEvent[]
+    expect(projectHistory(events)).toEqual([
+      { role: 'user', text: 'hi' },
+      { role: 'tool', name: 'bash', result: 'out' },
+      { role: 'assistant', text: 'done' },
+    ])
+  })
+
+  it('marks a failed tool result and truncates long summaries', () => {
+    const long = 'x'.repeat(300)
+    const events = [
+      { type: 'tool/call', data: { name: 'bash', callId: 'c1', turn: 1, step: 1, arguments: '{}' } },
+      { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: long }] } } },
+      { type: 'tool/call', data: { name: 'read', callId: 'c2', turn: 1, step: 1, arguments: '{}' } },
+      { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [] }, error: { code: 'EACCES' } } },
+    ] as unknown as readonly SessionEvent[]
+    const projected = projectHistory(events)
+    expect(projected[0]).toEqual({ role: 'tool', name: 'bash', result: `${'x'.repeat(200)}…` })
+    expect(projected[1]).toEqual({ role: 'tool', name: 'read', error: 'EACCES' })
   })
 })
