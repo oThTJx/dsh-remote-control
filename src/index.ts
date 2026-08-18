@@ -111,6 +111,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const disconnect = async (): Promise<{ ok: boolean }> => {
     client?.stop()
     client = undefined
+    chat = undefined
     resetPairingState()
     return { ok: true }
   }
@@ -120,6 +121,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const active = client !== undefined
     client?.stop()
     client = undefined
+    chat = undefined
     resetPairingState()
     relayUrl = nextUrl
     state.relayUrl = relayUrl
@@ -152,6 +154,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   /** Submit one message to the most recent active session; the reply streams via `event` pushes. */
   const chatSend = async (text: string): Promise<{ accepted: boolean }> => {
     requireClient()
+    if (chat !== undefined) throw new HandlerError('chat.busy', 'a chat is already streaming; wait for it to finish')
     // The agent registry is optional: chat is unavailable without it, while
     // inventory/settings/pairing keep working on hosts without an agent loop.
     const agents = ctx.get('agents')
