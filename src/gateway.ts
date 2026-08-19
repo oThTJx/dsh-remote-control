@@ -39,7 +39,7 @@ export interface RemoteControlGatewayDeps {
   resetIdentity(): Promise<ResetIdentitySnapshot>
   /** One explicit wire round-trip against the relay, for the connection test. */
   testConnection(): Promise<TestConnectionSnapshot>
-  /** Persist and apply a new relay address; '' selects the embedded local relay. */
+  /** Persist and apply a new relay address; '' selects the local relay at 127.0.0.1:8787. */
   setRelayUrl(url: string): Promise<SetRelayUrlSnapshot>
 }
 

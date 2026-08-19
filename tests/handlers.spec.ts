@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { createHandler, projectHistory, type HandlerServices } from '../src/handlers.ts'
 
 const entry = {
@@ -36,13 +37,57 @@ describe('remote handler', () => {
     expect(redact).toBe(true)
   })
 
-  it('mutates a settings namespace through the seam', async () => {
+  it('mutates a writable settings namespace through the seam', async () => {
     const calls: unknown[] = []
     const handler = createHandler(services({
+      describe: () => [{
+        ns: settingsNamespace('ui-theme'),
+        schema: {},
+        value: { theme: 'dark' },
+        revision: 3,
+        applies: 'immediate' as const,
+      }],
       mutate: (ns: string, ops: unknown, revision?: number) => { calls.push([ns, ops, revision]); return Promise.resolve() },
     }))
     await handler('settings.mutate', { ns: 'ui-theme', ops: [{ op: 'set', path: ['theme'], value: 'dark' }], expectedRevision: 3 })
     expect(calls).toEqual([['ui-theme', [{ op: 'set', path: ['theme'], value: 'dark' }], 3]])
+  })
+
+  it('refuses to mutate a namespace holding secret fields', async () => {
+    const mutated: string[] = []
+    const handler = createHandler(services({
+      describe: () => [{
+        ns: settingsNamespace('llm-deepseek'),
+        schema: {},
+        value: {},
+        revision: 1,
+        applies: 'immediate' as const,
+        secrets: [{ path: ['apiKeyEnv'], set: true }],
+      }],
+      mutate: (ns: string) => { mutated.push(ns); return Promise.resolve() },
+    }))
+    await expect(handler('settings.mutate', { ns: 'llm-deepseek', ops: [{ op: 'set', path: ['baseURL'], value: 'https://evil.example' }] }))
+      .rejects.toMatchObject({ code: 'payload.invalid' })
+    expect(mutated).toEqual([])
+  })
+
+  it('refuses to mutate the plugin identity or permission namespaces', async () => {
+    const mutated: string[] = []
+    const handler = createHandler(services({
+      describe: () => [{
+        ns: settingsNamespace('permission'),
+        schema: {},
+        value: {},
+        revision: 1,
+        applies: 'immediate' as const,
+      }],
+      mutate: (ns: string) => { mutated.push(ns); return Promise.resolve() },
+    }))
+    await expect(handler('settings.mutate', { ns: 'permission', ops: [{ op: 'set', path: ['autoApprove'], value: true }] }))
+      .rejects.toMatchObject({ code: 'payload.invalid' })
+    await expect(handler('settings.mutate', { ns: 'remote-control', ops: [{ op: 'set', path: ['deviceSecret'], value: 'x' }] }))
+      .rejects.toMatchObject({ code: 'payload.invalid' })
+    expect(mutated).toEqual([])
   })
 
   it('rejects an unknown method with a stable error code', async () => {

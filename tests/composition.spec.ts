@@ -250,4 +250,51 @@ describe('remote-control real composition', () => {
     expect(await readFile(settingsPath, 'utf8')).toContain('relayUrl:')
     await relay.close()
   })
+
+  it('surfaces a rejected plaintext relay address as a pairing error', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-remote-control-invalid-'))
+    const settingsPath = join(root, 'settings.yaml')
+    await writeFile(settingsPath, '')
+
+    const configPath = join(root, 'cordis.yml')
+    await writeFile(configPath, [
+      '- id: settings',
+      "  name: '@deepseek-ai/dsh-settings-file'",
+      '  config:',
+      `    path: ${JSON.stringify(settingsPath)}`,
+      '    debounceMs: 10',
+      '- id: remote',
+      "  name: '@firefly0621/dsh-remote-control'",
+      '  config: {}',
+      '',
+    ].join('\n'))
+
+    const ctx = new Context()
+    context = ctx
+    ctx.baseUrl = pathToFileURL(root).href + '/'
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.include = Include
+    const modules = new Map<string, unknown>([
+      ['@deepseek-ai/dsh-settings-file', FileSettingsProvider],
+      ['@firefly0621/dsh-remote-control', RemoteControlModule],
+    ])
+    ctx.loader.internal = {
+      version: 'v2',
+      async import(specifier: string) {
+        if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
+        return modules.get(specifier)
+      },
+    } as unknown as NonNullable<typeof ctx.loader.internal>
+    await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
+    await ctx.loader.await()
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    const gateway = ctx.get('remoteControl') as RemoteControlGateway
+    // A public relay over plaintext ws:// is refused; the panel must see why.
+    await gateway.setRelayUrl('ws://relay.example.com')
+    await gateway.connect()
+    const pairing = await gateway.pairing()
+    expect(pairing.status).toBe('error')
+    expect(pairing.error).toMatch(/wss/)
+  })
 })

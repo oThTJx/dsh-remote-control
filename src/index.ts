@@ -53,46 +53,63 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const startClient = (): void => {
     client?.stop()
-    client = new RelayClient({
-      relayUrl,
-      deviceId: current.deviceId,
-      deviceSecret: current.deviceSecret,
-      onPairing: (payload) => {
-        state.status = 'pairing'
-        state.code = payload.code
-        state.expiresAt = payload.expiresAt
-        delete state.error
-      },
-      onFailure: (error) => {
-        state.status = 'error'
-        state.error = error.message
-      },
-      onMessage: (message) => {
-        if (message.type === 'request') {
-          const { method, params } = message.payload as { method: string; params: unknown }
-          const id = message.id
-          void handler(method, params).then(
-            (result) => {
-              client?.send({
-                ...(id === undefined ? {} : { id }),
-                type: 'response',
-                payload: { result },
-              })
-            },
-            (error: unknown) => {
-              client?.send({
-                ...(id === undefined ? {} : { id }),
-                type: 'error',
-                payload: {
-                  code: error instanceof HandlerError ? error.code : 'internal.error',
-                  message: error instanceof Error ? error.message : String(error),
-                },
-              })
-            },
-          )
-        }
-      },
-    })
+    let next: RelayClient
+    try {
+      // Rejects plaintext relay URLs that are not loopback/private.
+      next = new RelayClient({
+        relayUrl,
+        deviceId: current.deviceId,
+        deviceSecret: current.deviceSecret,
+        onPairing: (payload) => {
+          state.status = 'pairing'
+          state.code = payload.code
+          state.expiresAt = payload.expiresAt
+          delete state.error
+        },
+        onFailure: (error) => {
+          state.status = 'error'
+          state.error = error.message
+        },
+        onDisconnect: () => {
+          // A dropped link cannot deliver the rest of the stream; abort the
+          // in-flight chat so the phone is not stuck in "streaming" forever.
+          if (chat !== undefined) {
+            chat = undefined
+            emitEvent('chat/error', { code: 'connection-lost', message: 'relay connection lost' })
+          }
+        },
+        onMessage: (message) => {
+          if (message.type === 'request') {
+            const { method, params } = message.payload as { method: string; params: unknown }
+            const id = message.id
+            void handler(method, params).then(
+              (result) => {
+                client?.send({
+                  ...(id === undefined ? {} : { id }),
+                  type: 'response',
+                  payload: { result },
+                })
+              },
+              (error: unknown) => {
+                client?.send({
+                  ...(id === undefined ? {} : { id }),
+                  type: 'error',
+                  payload: {
+                    code: error instanceof HandlerError ? error.code : 'internal.error',
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                })
+              },
+            )
+          }
+        },
+      })
+    } catch (error) {
+      state.status = 'error'
+      state.error = error instanceof Error ? error.message : String(error)
+      return
+    }
+    client = next
     client.start()
   }
 
@@ -150,8 +167,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return client
   }
 
-  /** One in-flight phone chat: its target session and the assistant text so far. */
-  let chat: { sessionId: string; buffer: string } | undefined
+  /** One in-flight phone chat: its target session, turn, and the assistant text so far. */
+  let chat: { sessionId: string; turn: number; buffer: string } | undefined
 
   const emitEvent = (event: string, payload: unknown): void => {
     client?.send({ type: 'event', payload: { event, payload } })
@@ -211,6 +228,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   /** Resume a persisted cold session under its stored preset, mirroring the web host. */
   const resumeAgent = async (sessionId: SessionId): Promise<Agent> => {
+    const existing = ownedSessions.get(sessionId)
+    if (existing !== undefined) return existing.agent
     const agents = ctx.get('agents')
     if (agents === undefined) throw new HandlerError('chat.unavailable', 'no agent loop on this host')
     let inspected: { meta: SessionHeader; events: readonly import('@deepseek-ai/dsh-session').SessionEvent[] }
@@ -235,6 +254,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       ...(defaults === undefined ? {} : { agentOptions: defaults.currentSelection() }),
       ...(setup === undefined ? {} : { setup }),
     })
+    // Own the handle so the phone can dispose the resumed agent; repeated
+    // resumes of the same session reuse the live instance instead of stacking.
+    ownedSessions.set(sessionId, handle)
     return handle.agent
   }
 
@@ -261,7 +283,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       throw new HandlerError('no-session', sessionId === undefined ? 'no active session on this host' : `no session: ${sessionId}`)
     }
     target.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
-    chat = { sessionId: target.session.id, buffer: '' }
+    // The turn that will carry the reply: one past the last completed turn.
+    const turn = target.session.events.filter(event => event.type === 'turn/end').length + 1
+    chat = { sessionId: target.session.id, turn, buffer: '' }
     emitEvent('chat/start', { sessionId: target.session.id })
     return { accepted: true }
   }
@@ -327,15 +351,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
 
   // Forward the target session's assistant stream to the paired app: text
-  // deltas as chat/chunk, the terminal turn as chat/done or chat/error.
+  // deltas as chat/chunk, the terminal turn as chat/done or chat/error. Only
+  // the turn this chat started is relayed, so a concurrent Web-side message in
+  // the same session cannot pollute the phone stream.
   ctx.on('session/event', (session, event) => {
     if (chat === undefined || session.id !== chat.sessionId) return
     if (event.type === 'assistant/chunk') {
+      if (event.data.turn !== chat.turn) return
       if (event.data.chunk.type === 'text-delta') {
         chat.buffer += event.data.chunk.text
         emitEvent('chat/chunk', { text: event.data.chunk.text })
       }
     } else if (event.type === 'turn/end') {
+      if (event.data.turn !== chat.turn) return
       if (event.data.reason.kind === 'completed') emitEvent('chat/done', { text: chat.buffer })
       else emitEvent('chat/error', { code: 'turn-not-completed', message: event.data.reason.kind })
       chat = undefined

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { RemoteControlGateway, type RemoteControlGatewayDeps } from '../src/gateway.ts'
+import { qrDataUrl } from '../src/pairing-state.ts'
 
 function deps(overrides?: Partial<RemoteControlGatewayDeps>): RemoteControlGatewayDeps {
   return {
@@ -65,5 +66,16 @@ describe('RemoteControlGateway', () => {
     const gateway = new RemoteControlGateway(ctx, deps())
     expect(await gateway.connect()).toEqual({ ok: true })
     expect(await gateway.disconnect()).toEqual({ ok: true })
+  })
+
+  it('evicts the oldest QR payloads once the cache is over its bound', async () => {
+    // More distinct pairing payloads than the cache holds: the eviction branch
+    // runs, and the newest payload still renders.
+    for (let i = 0; i < 21; i += 1) {
+      const payload = `relay=ws%3A%2F%2F127.0.0.1%3A8787&code=${String(i).padStart(6, '0')}`
+      await qrDataUrl(payload)
+    }
+    const newest = await qrDataUrl('relay=ws%3A%2F%2F127.0.0.1%3A8787&code=000020')
+    expect(newest).toMatch(/^data:image\/png;base64,/)
   })
 })

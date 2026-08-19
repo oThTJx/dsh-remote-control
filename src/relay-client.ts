@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
 import WebSocket from 'ws'
 import { HEARTBEAT_INTERVAL_MS, serializeMessage, parseMessage, type Envelope } from '@firefly0621/dsh-remote-protocol'
 
@@ -11,7 +12,41 @@ export interface RelayClientOptions {
   onPairing?: (payload: { code: string; expiresAt: number }) => void
   /** Invoked when a connect attempt fails before the socket opens. */
   onFailure?: (error: Error) => void
+  /** Invoked when an established connection drops (reconnects keep running). */
+  onDisconnect?: () => void
   onMessage: (envelope: Envelope) => void
+}
+
+/** One device-originated request awaiting its correlated reply. */
+interface PendingRequest {
+  timer: NodeJS.Timeout
+  resolve: (message: Envelope) => void
+  reject: (error: Error) => void
+}
+
+/**
+ * Plaintext `ws://` is acceptable only toward a loopback or private-network
+ * relay (the local relay, a LAN host); every other target must be `wss://` so
+ * the long-lived device secret never transits in the clear.
+ */
+export function isPlaintextRelayAllowed(relayUrl: string): boolean {
+  let url: URL
+  try {
+    url = new URL(relayUrl)
+  } catch {
+    return false
+  }
+  if (url.protocol === 'wss:') return true
+  if (url.protocol !== 'ws:') return false
+  // URL.hostname keeps the brackets on IPv6 literals.
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  if (host === 'localhost' || host === '::1' || host === '::') return true
+  if (isIP(host) === 6) return false
+  if (isIP(host) === 4) {
+    const [a = 0, b = 0] = host.split('.').map(Number)
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+  }
+  return false
 }
 
 export class RelayClient {
@@ -19,11 +54,14 @@ export class RelayClient {
   private heartbeat: NodeJS.Timeout | undefined
   private retryDelay = 1_000
   private stopped = false
-  /** Device-originated request id → its waiter, resolved by the relay's reply. */
-  private readonly pending = new Map<string, (message: Envelope) => void>()
+  private readonly pending = new Map<string, PendingRequest>()
   private readonly MAX_RETRY_MS = 60_000
 
-  constructor(private readonly options: RelayClientOptions) {}
+  constructor(private readonly options: RelayClientOptions) {
+    if (!isPlaintextRelayAllowed(options.relayUrl)) {
+      throw new Error(`relay URL must use wss:// unless it is a loopback or private-network address: ${options.relayUrl}`)
+    }
+  }
 
   get connected(): boolean {
     return this.socket?.readyState === WebSocket.OPEN
@@ -32,6 +70,7 @@ export class RelayClient {
   /** Open the connection and keep it alive with reconnects until stop(). */
   start(): void {
     this.stopped = false
+    this.retryDelay = 1_000
     this.connect()
   }
 
@@ -42,7 +81,10 @@ export class RelayClient {
     this.heartbeat = undefined
     this.socket?.terminate()
     this.socket = undefined
-    for (const reject of this.pending.values()) reject({ type: 'error', payload: { code: 'client.stopped', message: 'relay client stopped' } })
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error('relay client stopped'))
+    }
     this.pending.clear()
   }
 
@@ -71,12 +113,18 @@ export class RelayClient {
         this.pending.delete(id)
         reject(new Error(`relay request ${type} timed out`))
       }, timeoutMs)
-      this.pending.set(id, (message) => {
-        clearTimeout(timer)
-        resolve(message)
-      })
-      this.send({ type, id, payload } as Envelope)
+      this.pending.set(id, { timer, resolve, reject })
+      this.send({ type, id, payload })
     })
+  }
+
+  /** Fail every in-flight request (their replies can no longer arrive). */
+  private failPending(error: Error): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(error)
+    }
+    this.pending.clear()
   }
 
   private connect(): void {
@@ -105,10 +153,25 @@ export class RelayClient {
         return
       }
       if (envelope.id !== undefined) {
-        const waiter = this.pending.get(envelope.id)
-        if (waiter !== undefined) {
+        const pending = this.pending.get(envelope.id)
+        if (pending !== undefined) {
           this.pending.delete(envelope.id)
-          waiter(envelope)
+          clearTimeout(pending.timer)
+          pending.resolve(envelope)
+          return
+        }
+      }
+      if (envelope.type === 'error') {
+        const code = (envelope.payload as { code?: unknown }).code
+        if (code === 'device.replaced') {
+          // Another host registered the same deviceId; reconnecting would kick
+          // the winner in a loop — stop until the operator fixes the conflict.
+          this.stopped = true
+          if (this.heartbeat !== undefined) clearInterval(this.heartbeat)
+          this.heartbeat = undefined
+          this.failPending(new Error('device replaced elsewhere'))
+          this.options.onFailure?.(new Error('this deviceId was registered elsewhere; check for duplicate configuration'))
+          socket.terminate()
           return
         }
       }
@@ -121,6 +184,8 @@ export class RelayClient {
       if (this.heartbeat !== undefined) clearInterval(this.heartbeat)
       this.heartbeat = undefined
       if (this.stopped || this.socket !== socket) return
+      this.failPending(new Error('relay connection lost'))
+      this.options.onDisconnect?.()
       this.scheduleReconnect()
     })
     socket.on('error', () => {

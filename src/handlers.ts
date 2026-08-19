@@ -131,6 +131,23 @@ export class HandlerError extends Error {
   }
 }
 
+/**
+ * Namespaces a paired phone may never rewrite: this plugin's identity (the
+ * gateway's dedicated setters own it), and the approval/permission policy.
+ */
+const IMMUTABLE_NAMESPACES = new Set(['remote-control', 'permission'])
+
+/**
+ * A phone may mutate a namespace only when it holds no schema-declared secret
+ * fields: a rewrite of a sibling field (e.g. an LLM base URL) could otherwise
+ * redirect the host's next authenticated request to an attacker endpoint.
+ */
+function isMutableNamespace(settings: Pick<SettingsProvider, 'describe'>, ns: string): boolean {
+  if (IMMUTABLE_NAMESPACES.has(ns)) return false
+  const descriptor = settings.describe({ redactSecrets: true }).find(entry => String(entry.ns) === ns)
+  return descriptor !== undefined && (descriptor.secrets === undefined || descriptor.secrets.length === 0)
+}
+
 /** Dispatch one remote method over the host services. */
 export function createHandler(services: HandlerServices): (method: string, params: unknown) => Promise<unknown> {
   return async (method, params) => {
@@ -144,6 +161,9 @@ export function createHandler(services: HandlerServices): (method: string, param
       }
       case 'settings.mutate': {
         const { ns, ops, expectedRevision } = params as { ns: string; ops: SettingsPathOp[]; expectedRevision?: number }
+        if (!isMutableNamespace(services.settings, ns)) {
+          throw new HandlerError('payload.invalid', `namespace ${ns} is not writable from the phone`)
+        }
         await services.settings.mutate(settingsNamespace(ns), ops, expectedRevision)
         return { ok: true }
       }
